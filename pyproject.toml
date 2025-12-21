@@ -1,0 +1,28 @@
+[project]
+dependencies = []
+name = "anonymization"
+requires-python = ">= 3.11"
+version = "0.1.0"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tool.pixi.system-requirements]
+cuda = "12.0"
+
+[tool.pixi.pypi-dependencies]
+anonymization = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+python = "3.13.*"
+pytorch-gpu = "*"
+ultralytics = ">=8.3.240,<9"
+ipykernel = ">=7.1.0,<8"
+torchvision = ">=0.24.1,<0.25"
