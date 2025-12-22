@@ -180,3 +180,8 @@ class YoloPoseManager:
         with open(self.output_root / "data.yaml", "w") as f:
             f.write(yaml_content)
         print(f"Sukces: Wygenerowano przenośny YAML w {self.output_root}/data.yaml")
+
+# --- PRZYKŁAD UŻYCIA ---
+if __name__ == "__main__":
+
+    tools = YoloPoseManager(num_keypoints=17, defaultoutput_root="./data/final_yolopose_dataset")
