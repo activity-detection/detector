@@ -158,15 +158,17 @@ class YoloPoseManager:
             self.add_data(split_p/"images", split_p/"labels", split, move=move)
 
     def create_yaml(self, classes_dict):
-        """Generuje plik data.yaml niezbędny do treningu YOLO Pose."""
-        if not self.output_root: return
+        """Generuje przenośny plik data.yaml ze ścieżkami względnymi."""
+        # Ustawiamy ścieżkę względną od głównego folderu projektu
+        relative_path = "data/final_yolopose_dataset"
         
         coco_flip_idx = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
         
-        yaml_content = f"path: {self.output_root.absolute()}\n"
+        yaml_content = f"path: {relative_path}\n"
         yaml_content += "train: images/train\n"
         yaml_content += "val: images/val\n"
         yaml_content += "test: images/test\n\n"
+        
         yaml_content += f"nc: {len(classes_dict)}\n"
         yaml_content += "names:\n"
         for idx, name in classes_dict.items():
@@ -177,4 +179,4 @@ class YoloPoseManager:
 
         with open(self.output_root / "data.yaml", "w") as f:
             f.write(yaml_content)
-        print(f"Wygenerowano plik konfiguracyjny: {self.output_root}/data.yaml")
+        print(f"Sukces: Wygenerowano przenośny YAML w {self.output_root}/data.yaml")
