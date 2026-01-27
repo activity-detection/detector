@@ -1,18 +1,17 @@
 from ultralytics import YOLO
 import os
+from detector.config import Config
 
-BASE_DIR = os.getcwd()
+MODEL_DIR = Config.TRAIN_MODEL_DIR
+PROJECT_DIR = Config.TRAIN_PROJECT_DIR
 
-MODEL_DIR = os.path.join(BASE_DIR, "models", "saved-models")
-PROJECT_DIR = os.path.join(BASE_DIR, "models", "runs")
-
-MODEL_PATH = os.path.join(MODEL_DIR, "yolo26s.pt")
-RUN_NAME = "license_plate_v11_1"
-DATA_YAML = "data/License Plate Recognition.v11i.yolo26/data.yaml"
-EPOCHS = 5
-IMG_SIZE = 640
-DEVICE = "0"
-BATCH = 20
+MODEL_PATH = Config.TRAIN_MODEL_PATH
+RUN_NAME = Config.TRAIN_RUN_NAME
+DATA_YAML = Config.TRAIN_DATA_YAML
+EPOCHS = Config.TRAIN_EPOCHS
+IMG_SIZE = Config.TRAIN_IMG_SIZE
+DEVICE = Config.TRAIN_DEVICE
+BATCH = Config.TRAIN_BATCH
 
 def train():
     if not os.path.exists(MODEL_PATH):

@@ -4,10 +4,10 @@ import numpy as np
 from ultralytics import YOLO
 from collections import deque
 
-from .config import Config
-from .sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
-from .anonymizer import Anonymizer
-from .action_detector import ActionDetector
+from config import Config
+from sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
+from anonymizer import Anonymizer
+from action_detector import ActionDetector
 
 def get_source():
     if Config.MODE == 'VIDEO': return VideoFileSource(Config.SOURCE_PATH)

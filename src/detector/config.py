@@ -3,9 +3,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class Config:
     MODE = os.getenv('APP_MODE', 'VIDEO').upper()
     
+    BASE_DIR = os.getcwd()
+
     SOURCE_PATH = os.getenv('SOURCE_PATH')
     
     MODEL_PATH = os.getenv('MODEL_PATH')
@@ -34,3 +37,14 @@ class Config:
     @staticmethod
     def get_rtsp_url():
         return f"rtsp://{Config.CAM_USER}:{Config.CAM_PASS}@{Config.CAM_IP}:{Config.CAM_PORT}/{Config.CAM_PATH}"
+    
+    TRAIN_MODEL_DIR = os.path.join(BASE_DIR, "models", os.getenv('TRAIN_MODEL_DIR'))
+    TRAIN_PROJECT_DIR = os.path.join(BASE_DIR, "models", os.getenv('TRAIN_PROJECT_DIR'))
+
+    TRAIN_MODEL_PATH = os.path.join(TRAIN_MODEL_DIR, os.getenv('TRAIN_MODEL_PATH'))
+    TRAIN_RUN_NAME = os.getenv('TRAIN_RUN_NAME')
+    TRAIN_DATA_YAML = os.getenv('TRAIN_DATA_YAML')
+    TRAIN_EPOCHS = int(os.getenv('TRAIN_EPOCHS'))
+    TRAIN_IMG_SIZE = int(os.getenv('TRAIN_IMG_SIZE'))
+    TRAIN_DEVICE = os.getenv('TRAIN_DEVICE')
+    TRAIN_BATCH = int(os.getenv('TRAIN_BATCH'))
