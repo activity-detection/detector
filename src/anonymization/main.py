@@ -4,10 +4,10 @@ import numpy as np
 from ultralytics import YOLO
 from collections import deque
 
-from .config import Config
-from .sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
-from .anonymizer import Anonymizer
-from .action_detector import ActionDetector
+from config import Config
+from sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
+from anonymizer import Anonymizer
+from action_detector import ActionDetector
 
 def get_source():
     if Config.MODE == 'VIDEO': return VideoFileSource(Config.SOURCE_PATH)
@@ -23,19 +23,16 @@ def initialize_recorder(frame, recorder):
         return cv2.VideoWriter(Config.RECORD_NAME, cv2.VideoWriter_fourcc(*'MJPG'), 30, (w, h))
     return recorder
 
-def process_batch(batch_frames, models, anonymizer, detector, recorder):
-    
-    pose_results_batch = models["pose"]["model"](batch_frames, verbose=False)
-    plates_results_batch = models["plates"]["model"](batch_frames, verbose=False)
+def process_batch(batch_frames, model, anonymizer, detector, recorder):
+    results = model(batch_frames, verbose=False)
     
     processed_frames = []
 
-    for frame, pose_results, plates_results in zip(batch_frames, pose_results_batch, plates_results_batch):
+    for frame, result in zip(batch_frames, results):
         
-        anonymizer.anonymize(frame, pose_results, "pose")
-        anonymizer.anonymize(frame, plates_results, "box")
+        anonymizer.anonymize(frame, result)
         
-        saved_file = detector.process(frame, pose_results)
+        saved_file = detector.process(frame, result)
         
         if saved_file:
             print(f"[INFO] Zdarzenie zapisane do pliku: {saved_file}")
@@ -51,10 +48,7 @@ def main():
     print(f"MODE: {Config.MODE} | SOURCE: {Config.SOURCE_PATH} | BATCH SIZE: {Config.BATCH_SIZE}")
 
     source = get_source()
-    models = {
-                "pose": {"model": YOLO(Config.POSE_MODEL_PATH), "type": "pose"},
-                "plates": {"model": YOLO(Config.PLATES_MODEL_PATH), "type": "box"}
-            }
+    model = YOLO(Config.MODEL_PATH)
     anonymizer = Anonymizer()
     
     detector = ActionDetector(buffer_seconds=2, post_event_seconds=3)
@@ -72,7 +66,7 @@ def main():
             
             if not ret or frame is None:
                 if len(batch_buffer) > 0:
-                    process_batch(batch_buffer, models, anonymizer, detector, recorder)
+                    process_batch(batch_buffer, model, anonymizer, detector, recorder)
                 print("End of stream.")
                 break
 
@@ -85,7 +79,7 @@ def main():
 
             if len(batch_buffer) >= Config.BATCH_SIZE:
                 
-                processed_batch = process_batch(batch_buffer, models, anonymizer, detector, recorder)
+                processed_batch = process_batch(batch_buffer, model, anonymizer, detector, recorder)
                 
                 t_stop = time.perf_counter()
                 batch_time = t_stop - t_start

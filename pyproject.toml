@@ -23,7 +23,6 @@ anonymization = { path = ".", editable = true }
 [tool.pixi.dependencies]
 python = "3.13.*"
 pytorch-gpu = "*"
-ultralytics = ">=8.4.7,<9"
+ultralytics = ">=8.3.240,<9"
 ipykernel = ">=7.1.0,<8"
 torchvision = ">=0.24.1,<0.25"
-python-dotenv = ">=1.2.1,<2"

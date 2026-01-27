@@ -5,3 +5,10 @@
 data/
 models/
 src/anonymization/__pycache__
+
+.env
+
+.pyproject.toml
+pixi.lock
+.gitignore
+.gitattributes
