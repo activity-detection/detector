@@ -8,7 +8,9 @@ class Config:
     
     SOURCE_PATH = os.getenv('SOURCE_PATH')
     
-    MODEL_PATH = os.getenv('MODEL_PATH', 'yolo11n-pose.pt')
+    MODEL_PATH = os.getenv('MODEL_PATH')
+    POSE_MODEL_PATH = os.getenv('POSE_MODEL_PATH')
+    PLATES_MODEL_PATH = os.getenv('PLATES_MODEL_PATH')
     CONF_THRESHOLD = float(os.getenv('CONF_THRESHOLD', '0.5'))
     
     SHOW_VIDEO = os.getenv('SHOW_VIDEO', 'True').lower() == 'true'
