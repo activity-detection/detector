@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from collections import deque
 import time
-from config import Config
+from .config import Config
 
 class ActionDetector:
     def __init__(self, buffer_seconds=5, post_event_seconds=3, fps=30):

@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from ultralytics.engine.results import Results
-from config import Config
+from .config import Config
 
 class Anonymizer:
     
@@ -12,7 +12,7 @@ class Anonymizer:
         self.RIGHT_EYE_IDX = 2
         self.CONFIDENCE_THRESHOLD = Config.CONF_THRESHOLD
 
-    def anonymize(self, frame, result: Results):
+    def anonymize(self, frame, result: Results, type):
         """
         Main method accepting the frame and YOLO results.
         Modifies the frame 'in-place' (overwrites it).
@@ -30,15 +30,14 @@ class Anonymizer:
 
         # Iterate through all detected objects
         for i, box in enumerate(boxes):
-            cls_id = int(box.cls.item())
 
             # --- CLASS 0: PERSON (Keypoints Logic) ---
-            if cls_id == 0:
+            if type == "pose":
                 if keypoints is not None and len(keypoints) > i:
                     self._anonymize_face_circular(frame, keypoints[i], w, h)
 
             # --- CLASS 1: LICENSE PLATE (Bounding Box Logic) ---
-            elif cls_id == 1:
+            elif type == "box":
                 coords = box.xyxy.cpu().numpy().squeeze().astype(int)
                 self._anonymize_box_rectangular(frame, coords, w, h)
 
