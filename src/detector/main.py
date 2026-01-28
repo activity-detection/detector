@@ -4,10 +4,19 @@ import numpy as np
 from ultralytics import YOLO
 from collections import deque
 
-from config import Config
-from sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
-from anonymizer import Anonymizer
-from action_detector import ActionDetector
+from .config import Config
+from .sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
+from .anonymizer import Anonymizer
+from .detector import Detector
+from .lstm import MultiClassLSTM
+
+import torch
+import numpy as np
+
+INPUT_DIM = 34
+HIDDEN_DIM = 64
+OUTPUT_DIM = 3
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def get_source():
     if Config.MODE == 'VIDEO': return VideoFileSource(Config.SOURCE_PATH)
@@ -27,7 +36,7 @@ def process_batch(batch_frames, models, anonymizer, detector, recorder):
     
     pose_results_batch = models["pose"]["model"](batch_frames, verbose=False)
     plates_results_batch = models["plates"]["model"](batch_frames, verbose=False)
-    
+
     processed_frames = []
 
     for frame, pose_results, plates_results in zip(batch_frames, pose_results_batch, plates_results_batch):
@@ -53,12 +62,14 @@ def main():
     source = get_source()
     models = {
                 "pose": {"model": YOLO(Config.POSE_MODEL_PATH), "type": "pose"},
-                "plates": {"model": YOLO(Config.PLATES_MODEL_PATH), "type": "box"}
+                "plates": {"model": YOLO(Config.PLATES_MODEL_PATH), "type": "box"},
+                "detection": {"model": MultiClassLSTM(INPUT_DIM, HIDDEN_DIM, OUTPUT_DIM), "type": "detection"}
             }
     anonymizer = Anonymizer()
     
-    detector = ActionDetector(buffer_seconds=2, post_event_seconds=3)
-    
+    #detector = ActionDetector(buffer_seconds=2, post_event_seconds=3)
+    detector = Detector(models, anonymizer)
+
     frame_rate_buffer = deque(maxlen=200)
     recorder = None
     
@@ -72,7 +83,7 @@ def main():
             
             if not ret or frame is None:
                 if len(batch_buffer) > 0:
-                    process_batch(batch_buffer, models, anonymizer, detector, recorder)
+                    detector.process_batch_multiperson(batch_buffer)
                 print("End of stream.")
                 break
 
@@ -85,7 +96,7 @@ def main():
 
             if len(batch_buffer) >= Config.BATCH_SIZE:
                 
-                processed_batch = process_batch(batch_buffer, models, anonymizer, detector, recorder)
+                processed_batch = detector.process_batch_multiperson(batch_buffer)
                 
                 t_stop = time.perf_counter()
                 batch_time = t_stop - t_start
