@@ -2,7 +2,6 @@ from ultralytics import YOLO
 import os
 from detector.config import Config
 
-MODEL_DIR = Config.TRAIN_MODEL_DIR
 PROJECT_DIR = Config.TRAIN_PROJECT_DIR
 
 MODEL_PATH = Config.TRAIN_MODEL_PATH

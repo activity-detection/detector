@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from ultralytics.engine.results import Results
-from config import Config
+from .config import Config
 
 class Anonymizer:
     
