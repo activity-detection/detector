@@ -10,7 +10,7 @@ class Detector:
     def __init__(self, models, anonymizer, buffer_seconds=5, post_event_seconds=3, fps=30):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        self.track_history = defaultdict(lambda: deque(maxglen=30))
+        self.track_history = defaultdict(lambda: deque(maxlen=30))
         self.recorders = {}
         self.dangers = {1, 2}
         
