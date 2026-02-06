@@ -1,18 +1,14 @@
 import cv2
-import time
-import numpy as np
 from ultralytics import YOLO
-from collections import deque
 
 from .config import Config
 from .sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
 from .anonymizer import Anonymizer
 from .detector import Detector
 from .lstm import MultiClassLSTM
-from src.tools.fps_estimator import FPS_estimator
+from src.tools.fps_estimator import FPS_estimator 
 
 import torch
-import numpy as np
 
 INPUT_DIM = 34
 HIDDEN_DIM = 64
@@ -46,11 +42,9 @@ def main():
     try:
         while True:
             ret, frame = source.get_frame()
-            
-            if ret:
-                batch_buffer.append(frame)
-            else:
+            if not ret:
                 break
+            batch_buffer.append(frame)
                 
             if len(batch_buffer) >= Config.BATCH_SIZE:
                 processed_batch = detector.process_batch_multiperson(batch_buffer)
