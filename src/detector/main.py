@@ -9,6 +9,7 @@ from .sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSo
 from .anonymizer import Anonymizer
 from .detector import Detector
 from .lstm import MultiClassLSTM
+from src.tools.fps_estimator import FPS_estimator
 
 import torch
 import numpy as np
@@ -67,18 +68,14 @@ def main():
             }
     anonymizer = Anonymizer()
     
-    #detector = ActionDetector(buffer_seconds=2, post_event_seconds=3)
     detector = Detector(models, anonymizer)
 
-    frame_rate_buffer = deque(maxlen=200)
     recorder = None
-    
     batch_buffer = [] 
+    fps_estimator = FPS_estimator()
 
     try:
         while True:
-            t_start = time.perf_counter()
-
             ret, frame = source.get_frame()
             
             if not ret or frame is None:
@@ -98,13 +95,8 @@ def main():
                 
                 processed_batch = detector.process_batch_multiperson(batch_buffer)
                 
-                t_stop = time.perf_counter()
-                batch_time = t_stop - t_start
-                if batch_time > 0:
-                    fps_curr = len(batch_buffer) / batch_time
-                    frame_rate_buffer.append(fps_curr)
-                
-                avg_fps = np.mean(frame_rate_buffer) if frame_rate_buffer else 0
+                fps_estimator.end()
+                avg_fps = fps_estimator.get_fps()
 
                 if Config.SHOW_VIDEO:
                     for p_frame in processed_batch:
@@ -115,7 +107,8 @@ def main():
                         if key == ord('q'):
                             raise KeyboardInterrupt
 
-                batch_buffer = []
+                batch_buffer.clear()
+                fps_estimator.begin()
 
     except KeyboardInterrupt:
         print("Stopped by user")
