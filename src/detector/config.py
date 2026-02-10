@@ -10,18 +10,16 @@ class Config:
     BASE_DIR = os.getcwd()
 
     SOURCE_PATH = os.getenv('SOURCE_PATH')
+
+    ACTION_VECTORS_PATH = os.getenv('ACTION_VECTORS_PATH')
     
     MODEL_PATH = os.getenv('MODEL_PATH')
+    BASE_MODEL_PATH = os.getenv('BASE_MODEL_PATH')
     POSE_MODEL_PATH = os.getenv('POSE_MODEL_PATH')
     PLATES_MODEL_PATH = os.getenv('PLATES_MODEL_PATH')
-    CONF_THRESHOLD = float(os.getenv('CONF_THRESHOLD', '0.5'))
-    
-    SHOW_VIDEO = os.getenv('SHOW_VIDEO', 'True').lower() == 'true'
-    VIDEO_WIDTH = int(os.getenv('VIDEO_WIDTH')) if os.getenv('VIDEO_WIDTH') else None
-    VIDEO_HEIGHT = int(os.getenv('VIDEO_HEIGHT')) if os.getenv('VIDEO_HEIGHT') else None
-    
-    RECORD = os.getenv('RECORD_RESULTS', 'False').lower() == 'true'
-    RECORD_NAME = os.getenv('RECORD_NAME')
+    LSTM_MODEL_PATH = os.path.join(BASE_DIR, os.getenv('LSTM_MODEL_PATH'))
+
+    FRAME_RATE = 25 # default
 
     PIXELATION_SCALE = float(os.getenv('PIXELATION_SCALE'))
 
@@ -47,5 +45,3 @@ class Config:
     TRAIN_IMG_SIZE = int(os.getenv('TRAIN_IMG_SIZE'))
     TRAIN_DEVICE = os.getenv('TRAIN_DEVICE')
     TRAIN_BATCH = int(os.getenv('TRAIN_BATCH'))
-
-    LSTM_MODEL_PATH = os.path.join(BASE_DIR, os.getenv('LSTM_MODEL_PATH'))
