@@ -62,11 +62,6 @@ class ActionVector:
         
         return f"ActionVector({', '.join(active_counts)})"
 
-@dataclass
-class FrameVector:
-    frame: ndarray
-    vector: ActionVector
-
 class ActionClass:
     def __init__(self, name: str, required_vector: ActionVector, pre_buffer_seconds=2.0, cooldown_seconds=2.0):
         self.name = name
@@ -83,7 +78,7 @@ class ActionClass:
 
     def next_frame(self, frame, current_vector: ActionVector):
         trigger_active = current_vector >= self.required_vector
-        frame_vector = FrameVector(frame=frame, vector=current_vector)
+        frame_vector = {'frame' : frame, 'vector' : current_vector}
         if trigger_active:
             self.trigger_count += 1
         if self.trigger_count == Config.FRAME_RATE * 10:
@@ -125,7 +120,7 @@ class ActionClass:
         self.post_buffer = []
 
     @staticmethod
-    def _save_clip_task(frame_vectors: List[FrameVector], action_name):
+    def _save_clip_task(frame_vectors, action_name):
         anonymizer = Anonymizer()
         frames = anonymizer.anonymize_clip(frame_vectors)
 

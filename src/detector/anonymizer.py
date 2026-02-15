@@ -20,17 +20,17 @@ class Anonymizer:
         self.tracked_plates = {} # {id : (coords, ttl)}
 
     def anonymize_clip(self, frame_vectors):
-        frames = [frame_vector.frame for frame_vector in frame_vectors]
-        results = [frame_vector.vector.pose_results for frame_vector in frame_vectors]
-        self.anonymize_faces(frames, results)
-        self.anonymize_license_plates(frames)
+        frames = [frame_vector['frame'] for frame_vector in frame_vectors]
+        results = [frame_vector['vector'].pose_results for frame_vector in frame_vectors]
+        self.anonymize_faces_all(frames, results)
+        self.anonymize_license_plates_all(frames)
         return frames
         
-    def anonymize_faces(self, frames, results: Results):
+    def anonymize_faces_all(self, frames, results: Results): # anonymizes frame based on results from YOLO pose
         for frame, result in zip(frames, results):
-            self.anonymize_face(frame, result)
+            self.anonymize_faces(frame, result)
 
-    def anonymize_face(self, frame, result: Results):
+    def anonymize_faces(self, frame, result: Results):
         h, w = frame.shape[:2]
         current_faces = []
         if result.keypoints is not None:
@@ -51,13 +51,13 @@ class Anonymizer:
                     self._apply_circular_mask(frame, face['x'], face['y'], face['r'], w, h)
         return frame
 
-    def anonymize_license_plates(self, frames):
+    def anonymize_license_plates_all(self, frames): # anonymizes frame based on results from YOLO 
         for batch in batched(frames, self.PLATE_BATCH_SIZE):
             results = self.license_plate_model.track(batch, verbose=False, stream=True)
             for frame, result in zip(batch, results):
-                self.anonymize_license_plate(frame, result)
+                self.anonymize_license_plates(frame, result)
 
-    def anonymize_license_plate(self, frame, result: Results):
+    def anonymize_license_plates(self, frame, result: Results): # anonymizes license plates on frame
         h, w = frame.shape[:2]
     
         current_plates = []
@@ -78,7 +78,7 @@ class Anonymizer:
 
         return frame
 
-    def _update_tracker(self, tracker_dict, current_detections, ids):
+    def _update_tracker(self, tracker_dict, current_detections, ids): # updates tracker based on ids of results and ttl
         for key in tracker_dict:
             item, ttl = tracker_dict[key]
             ttl -= 1
@@ -89,7 +89,7 @@ class Anonymizer:
         tracker_dict = {key:val for key, val in tracker_dict.items() if val[1] != 0}
         return tracker_dict
 
-    def _calculate_face_geometry(self, kpts):
+    def _calculate_face_geometry(self, kpts): # calculates center of face and its radius for mask
         left_eye = kpts[self.LEFT_EYE_IDX]
         right_eye = kpts[self.RIGHT_EYE_IDX]
         dx = left_eye[0] - right_eye[0]
@@ -100,7 +100,7 @@ class Anonymizer:
         center_y = int((left_eye[1] + right_eye[1]) * 0.5)
         return {'x' : center_x, 'y' : center_y, 'r' : radius}
 
-    def _apply_circular_mask(self, frame, center_x, center_y, radius, img_w, img_h):
+    def _apply_circular_mask(self, frame, center_x, center_y, radius, img_w, img_h): # applies circular mask on frame inplace
         x1 = max(center_x - radius, 0)
         y1 = max(center_y - radius, 0)
         x2 = min(center_x + radius, img_w)
@@ -114,7 +114,7 @@ class Anonymizer:
         pixelated_roi = cv2.medianBlur(roi, self.MEDIAN_RADIUS)
         frame[y1:y2, x1:x2] = np.where(mask[..., None] > 0, pixelated_roi, roi)
 
-    def _anonymize_box_rectangular(self, frame, coords, img_w, img_h):
+    def _anonymize_box_rectangular(self, frame, coords, img_w, img_h): # applies rectangular mask on frame inplace
         x1, y1, x2, y2 = coords
         x1, y1 = max(x1, 0), max(y1, 0)
         x2, y2 = min(x2, img_w), min(y2, img_h)
