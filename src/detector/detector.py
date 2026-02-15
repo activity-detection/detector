@@ -107,6 +107,7 @@ class Detector:
         vector_list = []
         for result in results:
             vector = ActionVector()
+            vector.pose_results = result
             if result.boxes is not None and result.boxes.id is not None:
                 track_ids = result.boxes.id.int().cpu().tolist()
                 vector.count_person = len(track_ids)
@@ -123,11 +124,8 @@ class Detector:
                     action_id = 0
                     action_label = "inne"
 
-                    # Czy osoba dla id ma historię 30 klatek
                     if len(self.track_history[track_id]) == 60:
-                        # --- TUTAJ URUCHAMIASZ LSTM DLA TEJ OSOBY ---     
 
-                        # Przygotowanie danych (1, 30, 34)
                         sequence = np.array(self.track_history[track_id])
                         input_tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device) 
 

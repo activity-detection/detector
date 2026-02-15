@@ -7,11 +7,15 @@ from datetime import datetime
 from pathlib import Path
 from .config import Config
 import os
+from typing import Any, List
+from .anonymizer import Anonymizer
+from numpy import ndarray
 
 MIN_TRIGGER_COUNT = 10
 
 @dataclass(slots=True)
 class ActionVector:
+    pose_results: Any = None
     count_person: int = 0
     count_bicycle: int = 0
     count_car: int = 0
@@ -32,20 +36,25 @@ class ActionVector:
         new_values = {
             f.name: getattr(self, f.name) + getattr(other, f.name)
             for f in fields(self)
+            if f.name != 'pose_results'
         }
-        return ActionVector(**new_values)
+        
+        pose_results = self.pose_results if self.pose_results is not None else other.pose_results
+        return ActionVector(**new_values, pose_results=pose_results)
 
     def __ge__(self, other: 'ActionVector') -> bool:
         return all(
             getattr(self, f.name) >= getattr(other, f.name)
             for f in fields(self)
+            if f.name != 'pose_results'
         )
     
     def __str__(self) -> str:
         active_counts = [
             f"{f.name.replace('count_', '')}: {getattr(self, f.name)}"
             for f in fields(self)
-            if getattr(self, f.name) > 0
+            if f.name != 'pose_results'
+            and getattr(self, f.name) > 0
         ]
         
         if not active_counts:
@@ -53,13 +62,18 @@ class ActionVector:
         
         return f"ActionVector({', '.join(active_counts)})"
 
+@dataclass
+class FrameVector:
+    frame: ndarray
+    vector: ActionVector
+
 class ActionClass:
     def __init__(self, name: str, required_vector: ActionVector, pre_buffer_seconds=2.0, cooldown_seconds=2.0):
         self.name = name
         self.required_vector = required_vector
         buffer_len = int(pre_buffer_seconds * Config.FRAME_RATE)
         self.pre_buffer = deque(maxlen=buffer_len)
-        self.post_buffer = [] 
+        self.post_buffer = []
         
         self.is_recording = False
         self.inactive_frames = 0
@@ -69,11 +83,14 @@ class ActionClass:
 
     def next_frame(self, frame, current_vector: ActionVector):
         trigger_active = current_vector >= self.required_vector
+        frame_vector = FrameVector(frame=frame, vector=current_vector)
         if trigger_active:
             self.trigger_count += 1
+        if self.trigger_count == Config.FRAME_RATE * 10:
+            self._stop_recording()
 
         if self.is_recording:
-            self.post_buffer.append(frame)
+            self.post_buffer.append(frame_vector)
             
             if trigger_active:
                 self.inactive_frames = 0
@@ -84,11 +101,11 @@ class ActionClass:
                 self._stop_recording()
         
         else:
-            self.pre_buffer.append(frame)
+            self.pre_buffer.append(frame_vector)
             if trigger_active:
-                self._start_recording(frame)
+                self._start_recording()
 
-    def _start_recording(self, frame):
+    def _start_recording(self):
         self.is_recording = True
         self.inactive_frames = 0
         self.post_buffer = []
@@ -103,13 +120,14 @@ class ActionClass:
                 args=(full_clip, self.name)
             )
             save_thread.start()
+        self.trigger_count = 0
         self.pre_buffer.clear()
         self.post_buffer = []
 
     @staticmethod
-    def _save_clip_task(frames, action_name):
-        if not frames:
-            return
+    def _save_clip_task(frame_vectors: List[FrameVector], action_name):
+        anonymizer = Anonymizer()
+        frames = anonymizer.anonymize_clip(frame_vectors)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{action_name}_{timestamp}.avi"
