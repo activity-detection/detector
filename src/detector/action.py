@@ -1,5 +1,4 @@
-from collections import deque
-from dataclasses import dataclass, fields
+from collections import deque, Counter
 import csv
 import cv2
 import threading
@@ -7,54 +6,45 @@ from datetime import datetime
 from pathlib import Path
 from .config import Config
 import os
-from typing import Any, List
 from .anonymizer import Anonymizer
-from numpy import ndarray
 
 MIN_TRIGGER_COUNT = 10
 
-@dataclass(slots=True)
 class ActionVector:
-    pose_results: Any = None
-    count_person: int = 0
-    count_bicycle: int = 0
-    count_car: int = 0
-    count_bird: int = 0
-    count_cat: int = 0
-    count_dog: int = 0
-    count_handbag: int = 0
-    count_suitcase: int = 0
-    count_knife: int = 0
+    pose_results = None
 
-    count_squat: int = 0
-    count_jumping_jacks: int = 0
+    def __init__(self, data=None):
+        self.counter = Counter()
+        if data is not None:
+            self.counter.update(data)
+
+    def update(self, data):
+        self.counter.update(data)
 
     def __add__(self, other: 'ActionVector') -> 'ActionVector':
         if not isinstance(other, ActionVector):
             return NotImplemented
         
-        new_values = {
-            f.name: getattr(self, f.name) + getattr(other, f.name)
-            for f in fields(self)
-            if f.name != 'pose_results'
-        }
+        new_vector = ActionVector()
+        new_vector.counter.update(self.counter)
+        new_vector.counter.update(other.counter)
         
         pose_results = self.pose_results if self.pose_results is not None else other.pose_results
-        return ActionVector(**new_values, pose_results=pose_results)
+        new_vector.pose_results = pose_results
+        return new_vector
 
     def __ge__(self, other: 'ActionVector') -> bool:
         return all(
-            getattr(self, f.name) >= getattr(other, f.name)
-            for f in fields(self)
-            if f.name != 'pose_results'
+            self.counter[f] >= other.counter[f]
+            for f in other.counter
         )
     
+
     def __str__(self) -> str:
         active_counts = [
-            f"{f.name.replace('count_', '')}: {getattr(self, f.name)}"
-            for f in fields(self)
-            if f.name != 'pose_results'
-            and getattr(self, f.name) > 0
+            f"{f}: {self.counter[f]}"
+            for f in self.counter
+            if self.counter[f] > 0
         ]
         
         if not active_counts:
@@ -81,8 +71,6 @@ class ActionClass:
         frame_vector = {'frame' : frame, 'vector' : current_vector}
         if trigger_active:
             self.trigger_count += 1
-        if self.trigger_count == Config.FRAME_RATE * 10:
-            self._stop_recording()
 
         if self.is_recording:
             self.post_buffer.append(frame_vector)
@@ -156,13 +144,9 @@ def load_action_classes(path: str) -> list[ActionClass]:
             name = row.pop("action_name", "Unknown")
             pre_seconds = float(row.pop('pre_seconds', '2.0'))
             post_seconds = float(row.pop('post_seconds', '2.0'))
-            vector_kwargs = {}
-            for key, value in row.items():
-                field_name = f"count_{key}"
-                if field_name in ActionVector.__slots__:
-                    vector_kwargs[field_name] = int(value)
+            vector_kwargs = {key : int(value) for key, value in row.items()}
             
-            vector = ActionVector(**vector_kwargs)
+            vector = ActionVector(vector_kwargs)
             action_classes.append(ActionClass(name=name, pre_buffer_seconds=pre_seconds, cooldown_seconds=post_seconds, required_vector=vector))
             
     return action_classes

@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "dotenv>=0.9.9",
+    "fiftyone>=1.13.0",
+    "labelimg>=1.8.6",
     "lap>=0.5.12",
     "opencv-python>=4.13.0.92",
     "torch>=2.6.0",

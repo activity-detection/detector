@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 from ultralytics.engine.results import Results
 from ultralytics import YOLO
-from .config import Config
 from itertools import batched
+from .config import Config
 
 class Anonymizer:
     RADIUS_MULTIPLIER = 2.0

@@ -16,14 +16,14 @@ class Detector:
         self.CLASS_NAMES = CLASS_NAMES
 
         self.BASE_YOLO_MAPPING = {
-            1: 'count_bicycle',
-            2: 'count_car',
-            14: 'count_bird',
-            15: 'count_cat',
-            16: 'count_dog',
-            26: 'count_handbag',
-            28: 'count_suitcase',
-            43: 'count_knife'
+            1: 'bicycle',
+            2: 'car',
+            14: 'bird',
+            15: 'cat',
+            16: 'dog',
+            26: 'handbag',
+            28: 'suitcase',
+            43: 'knife'
         }
 
         self.pose_model = YOLO(Config.POSE_MODEL_PATH)
@@ -63,7 +63,7 @@ class Detector:
         """
 
         if self.detection_model is None:
-            return "LSTM się nie załadował!"
+            return "LSTM is not loaded!"
 
         sequence_tensor = sequence_tensor.to(self.device)
 
@@ -85,20 +85,18 @@ class Detector:
         return vector_list
 
     
-    def detect_base_yolo(self, frames) -> ActionVector:
+    def detect_base_yolo(self, frames):
         results = self.yolo_base.track(frames, verbose=False, half=True)
         vector_list = []
         for result in results:
-            counts = {field: 0 for field in self.BASE_YOLO_MAPPING.values()}
-            
+            classes = []
             for box in result.boxes:
                 class_id = int(box.cls[0])
                 
                 if class_id in self.BASE_YOLO_MAPPING:
                     field_name = self.BASE_YOLO_MAPPING[class_id]
-                    counts[field_name] += 1
-            vector = ActionVector(**counts)
-            vector_list.append(vector)
+                    classes.append(field_name)
+            vector_list.append(ActionVector(classes))
                 
         return vector_list
     
@@ -110,7 +108,8 @@ class Detector:
             vector.pose_results = result
             if result.boxes is not None and result.boxes.id is not None:
                 track_ids = result.boxes.id.int().cpu().tolist()
-                vector.count_person = len(track_ids)
+                person = {'person' : len(track_ids)}
+                vector.update(person)
 
                 keypoints = result.keypoints.xy.cpu().numpy()
 
@@ -131,9 +130,9 @@ class Detector:
 
                         action_id, action_label = self.predict_action(input_tensor)
                         if action_label == 'squat':
-                            vector.count_squat += 1
+                            vector.update({'squat' : 1})
                         if action_label == 'jumping_jacks':
-                            vector.count_jumping_jacks += 1
+                            vector.update({'jumping_jacks' : 1})
             vector_list.append(vector)
         return vector_list
     
