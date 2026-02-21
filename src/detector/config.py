@@ -3,6 +3,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+BASE_YOLO_MAPPING = {
+    1: 'bicycle',
+    2: 'car',
+    14: 'bird',
+    15: 'cat',
+    16: 'dog',
+    26: 'handbag',
+    28: 'suitcase',
+    43: 'knife'
+}
+
+LSTM_MAPPING = {
+    0 : 'normal',
+    1 : 'jumping_jacks',
+    2 : 'squat'
+}
 
 class Config:
     MODE = os.getenv('APP_MODE', 'VIDEO').upper()

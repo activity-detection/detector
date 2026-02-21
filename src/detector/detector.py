@@ -3,8 +3,8 @@ import numpy as np
 from collections import defaultdict, deque
 from ultralytics import YOLO
 
-from .lstm import MultiClassLSTM, CLASS_NAMES
-from .config import Config
+from .lstm import MultiClassLSTM
+from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
 from .action import ActionVector
 
 class Detector:
@@ -12,19 +12,6 @@ class Detector:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         self.track_history = defaultdict(lambda: deque(maxlen=60))
-        
-        self.CLASS_NAMES = CLASS_NAMES
-
-        self.BASE_YOLO_MAPPING = {
-            1: 'bicycle',
-            2: 'car',
-            14: 'bird',
-            15: 'cat',
-            16: 'dog',
-            26: 'handbag',
-            28: 'suitcase',
-            43: 'knife'
-        }
 
         self.pose_model = YOLO(Config.POSE_MODEL_PATH)
         self.yolo_base = YOLO(Config.BASE_MODEL_PATH)
@@ -73,8 +60,7 @@ class Detector:
             _, predicted_idx = torch.max(outputs, 1)
             class_id = predicted_idx.item()
             
-        # Mapping ID on names
-        return class_id, self.CLASS_NAMES.get(class_id, f"Unknown ({class_id})")
+        return class_id
     
     def process_batch(self, frames):
         vector_base = self.detect_base_yolo(frames)
@@ -93,8 +79,8 @@ class Detector:
             for box in result.boxes:
                 class_id = int(box.cls[0])
                 
-                if class_id in self.BASE_YOLO_MAPPING:
-                    field_name = self.BASE_YOLO_MAPPING[class_id]
+                if class_id in BASE_YOLO_MAPPING:
+                    field_name = BASE_YOLO_MAPPING[class_id]
                     classes.append(field_name)
             vector_list.append(ActionVector(classes))
                 
@@ -112,7 +98,7 @@ class Detector:
                 vector.update(person)
 
                 keypoints = result.keypoints.xy.cpu().numpy()
-
+                lstm_list = []
                 for person_idx, track_id in enumerate(track_ids):
                     kps = keypoints[person_idx]
         
@@ -128,11 +114,9 @@ class Detector:
                         sequence = np.array(self.track_history[track_id])
                         input_tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device) 
 
-                        action_id, action_label = self.predict_action(input_tensor)
-                        if action_label == 'squat':
-                            vector.update({'squat' : 1})
-                        if action_label == 'jumping_jacks':
-                            vector.update({'jumping_jacks' : 1})
+                        action_id = self.predict_action(input_tensor)
+                        lstm_list.append(LSTM_MAPPING[action_id])
+                vector.update(lstm_list)
             vector_list.append(vector)
         return vector_list
     
