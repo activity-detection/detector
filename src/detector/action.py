@@ -12,6 +12,7 @@ MIN_TRIGGER_COUNT = 10
 
 class ActionVector:
     pose_results = None
+    base_yolo_result = None
 
     def __init__(self, data=None):
         self.counter = Counter()
@@ -31,6 +32,8 @@ class ActionVector:
         
         pose_results = self.pose_results if self.pose_results is not None else other.pose_results
         new_vector.pose_results = pose_results
+        base_yolo_result = self.base_yolo_result if self.base_yolo_result is not None else other.base_yolo_result
+        new_vector.base_yolo_result = base_yolo_result
         return new_vector
 
     def __ge__(self, other: 'ActionVector') -> bool:
@@ -145,8 +148,8 @@ def load_action_classes(path: str) -> list[ActionClass]:
             pre_seconds = float(row.pop('pre_seconds', '2.0'))
             post_seconds = float(row.pop('post_seconds', '2.0'))
             vector_kwargs = {key : int(value) for key, value in row.items()
-                             if key in BASE_YOLO_MAPPING.keys()
-                             or key in LSTM_MAPPING.keys()}
+                             if key in BASE_YOLO_MAPPING.values()
+                             or key in LSTM_MAPPING.values()}
             
             vector = ActionVector(vector_kwargs)
             action_classes.append(ActionClass(name=name, pre_buffer_seconds=pre_seconds, cooldown_seconds=post_seconds, required_vector=vector))

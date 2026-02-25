@@ -4,7 +4,7 @@ from collections import defaultdict, deque
 from ultralytics import YOLO
 
 from .lstm import MultiClassLSTM
-from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
+from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING, LICENSE_PLATE_ID
 from .action import ActionVector
 
 class Detector:
@@ -63,10 +63,10 @@ class Detector:
         return class_id
     
     def process_batch(self, frames):
-        vector_base = self.detect_base_yolo(frames)
-        vector_pose = self.detect_yolo_pose(frames)
+        vectors_base = self.detect_base_yolo(frames)
+        vectors_pose = self.detect_yolo_pose(frames)
 
-        vector_list = [x + y for x, y in zip(vector_base, vector_pose)]
+        vector_list = [x + y for x, y in zip(vectors_base, vectors_pose)]
 
         return vector_list
 
@@ -78,11 +78,12 @@ class Detector:
             classes = []
             for box in result.boxes:
                 class_id = int(box.cls[0])
-                
                 if class_id in BASE_YOLO_MAPPING:
                     field_name = BASE_YOLO_MAPPING[class_id]
                     classes.append(field_name)
-            vector_list.append(ActionVector(classes))
+            vector = ActionVector(classes)
+            vector.base_yolo_result = result
+            vector_list.append(vector)
                 
         return vector_list
     

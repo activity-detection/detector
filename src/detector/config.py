@@ -4,15 +4,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_YOLO_MAPPING = {
-    1: 'bicycle',
-    2: 'car',
-    14: 'bird',
-    15: 'cat',
-    16: 'dog',
-    26: 'handbag',
-    28: 'suitcase',
-    43: 'knife'
+    0: 'bicycle',
+    1: 'car',
+    2: 'bird',
+    3: 'cat',
+    4: 'dog',
+    5: 'handbag',
+    6: 'suitcase',
+    7: 'knife'
 }
+
+LICENSE_PLATE_ID = 8
 
 LSTM_MAPPING = {
     0 : 'normal',
@@ -22,22 +24,18 @@ LSTM_MAPPING = {
 
 class Config:
     MODE = os.getenv('APP_MODE', 'VIDEO').upper()
-    
+
     BASE_DIR = os.getcwd()
 
     SOURCE_PATH = os.getenv('SOURCE_PATH')
 
     ACTION_VECTORS_PATH = os.getenv('ACTION_VECTORS_PATH')
     
-    MODEL_PATH = os.getenv('MODEL_PATH')
     BASE_MODEL_PATH = os.getenv('BASE_MODEL_PATH')
     POSE_MODEL_PATH = os.getenv('POSE_MODEL_PATH')
-    PLATES_MODEL_PATH = os.getenv('PLATES_MODEL_PATH')
     LSTM_MODEL_PATH = os.path.join(BASE_DIR, os.getenv('LSTM_MODEL_PATH'))
 
     FRAME_RATE = 25 # default
-
-    PIXELATION_SCALE = float(os.getenv('PIXELATION_SCALE'))
 
     BATCH_SIZE = int(os.getenv('BATCH_SIZE', '4'))
     CLIP_FOLDER = os.getenv('CLIP_FOLDER')

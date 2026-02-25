@@ -1,9 +1,7 @@
 import cv2
 import numpy as np
 from ultralytics.engine.results import Results
-from ultralytics import YOLO
-from itertools import batched
-from .config import Config
+from .config import Config, LICENSE_PLATE_ID
 
 class Anonymizer:
     RADIUS_MULTIPLIER = 2.0
@@ -13,17 +11,16 @@ class Anonymizer:
     PLATE_BATCH_SIZE = Config.BATCH_SIZE
     FADE_OUT_FRAMES = 15
 
-    def __init__(self):
-        self.license_plate_model = YOLO(Config.PLATES_MODEL_PATH)
-        
+    def __init__(self):        
         self.tracked_faces = {} # {id : (face_geo, ttl)}
         self.tracked_plates = {} # {id : (coords, ttl)}
 
     def anonymize_clip(self, frame_vectors):
         frames = [frame_vector['frame'] for frame_vector in frame_vectors]
-        results = [frame_vector['vector'].pose_results for frame_vector in frame_vectors]
-        self.anonymize_faces_all(frames, results)
-        self.anonymize_license_plates_all(frames)
+        pose_results = [frame_vector['vector'].pose_results for frame_vector in frame_vectors]
+        self.anonymize_faces_all(frames, pose_results)
+        yolo_results = [frame_vector['vector'].base_yolo_result for frame_vector in frame_vectors]
+        self.anonymize_license_plates_all(frames, yolo_results)
         return frames
         
     def anonymize_faces_all(self, frames, results: Results): # anonymizes frame based on results from YOLO pose
@@ -51,11 +48,10 @@ class Anonymizer:
                     self._apply_circular_mask(frame, face['x'], face['y'], face['r'], w, h)
         return frame
 
-    def anonymize_license_plates_all(self, frames): # anonymizes frame based on results from YOLO 
-        for batch in batched(frames, self.PLATE_BATCH_SIZE):
-            results = self.license_plate_model.track(batch, verbose=False, stream=True)
-            for frame, result in zip(batch, results):
-                self.anonymize_license_plates(frame, result)
+    def anonymize_license_plates_all(self, frames, results): # anonymizes frame based on results from YOLO 
+
+        for frame, result in zip(frames, results):
+            self.anonymize_license_plates(frame, result)
 
     def anonymize_license_plates(self, frame, result: Results): # anonymizes license plates on frame
         h, w = frame.shape[:2]
@@ -63,12 +59,13 @@ class Anonymizer:
         current_plates = []
         ids = []
         for box in result.boxes:
-            coords = box.xyxy.cpu().numpy().squeeze().astype(int)
-            if box.id is not None:
-                ids.append(int(box.id))
-                current_plates.append(coords)
-            else:
-                self._anonymize_box_rectangular(frame, coords, w, h)
+            if box.cls == LICENSE_PLATE_ID:
+                coords = box.xyxy.cpu().numpy().squeeze().astype(int)
+                if box.id is not None:
+                    ids.append(int(box.id))
+                    current_plates.append(coords)
+                else:
+                    self._anonymize_box_rectangular(frame, coords, w, h)
 
         self.tracked_plates = self._update_tracker(self.tracked_plates, current_plates, ids)
         
