@@ -23,12 +23,14 @@ class ActionVector:
         self.counter.update(data)
 
     def __add__(self, other: 'ActionVector') -> 'ActionVector':
+        """adds values from two vectors,
+        takes results from first vector if present otherwise from second"""
         if not isinstance(other, ActionVector):
             return NotImplemented
         
         new_vector = ActionVector()
-        new_vector.counter.update(self.counter)
-        new_vector.counter.update(other.counter)
+        new_vector.update(self.counter)
+        new_vector.update(other.counter)
         
         pose_results = self.pose_results if self.pose_results is not None else other.pose_results
         new_vector.pose_results = pose_results
@@ -36,7 +38,7 @@ class ActionVector:
         new_vector.base_yolo_result = base_yolo_result
         return new_vector
 
-    def __ge__(self, other: 'ActionVector') -> bool:
+    def __ge__(self, other: 'ActionVector') -> bool: # greater or equals
         return all(
             self.counter[f] >= other.counter[f]
             for f in other.counter
@@ -111,7 +113,7 @@ class ActionClass:
         self.post_buffer = []
 
     @staticmethod
-    def _save_clip_task(frame_vectors, action_name):
+    def _save_clip_task(frame_vectors, action_name): # TODO wysyłanie do backend Bartka
         anonymizer = Anonymizer()
         frames = anonymizer.anonymize_clip(frame_vectors)
 
@@ -128,13 +130,12 @@ class ActionClass:
                 out.write(frame)
         finally:
             out.release()
-        # print(f"Saved: {filename}")
 
     def __str__(self) -> str:
         status = "RECORDING" if self.is_recording else "IDLE"
         return f"ActionClass(name='{self.name}', status={status}, cooldown={self.inactive_frames}/{self.max_inactive_frames})"
 
-def load_action_classes(path: str) -> list[ActionClass]:
+def load_action_classes(path: str) -> list[ActionClass]: # loads action classes from csv file
     action_classes = []
     csv_path = Path(path)
     
@@ -145,7 +146,7 @@ def load_action_classes(path: str) -> list[ActionClass]:
         reader = csv.DictReader(f)
         for row in reader:
             name = row.pop("action_name", "Unknown")
-            pre_seconds = float(row.pop('pre_seconds', '2.0'))
+            pre_seconds = float(row.pop('pre_seconds', '2.0')) # seconds before action
             post_seconds = float(row.pop('post_seconds', '2.0'))
             vector_kwargs = {key : int(value) for key, value in row.items()
                              if key in BASE_YOLO_MAPPING.values()

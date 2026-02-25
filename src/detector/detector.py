@@ -4,14 +4,14 @@ from collections import defaultdict, deque
 from ultralytics import YOLO
 
 from .lstm import MultiClassLSTM
-from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING, LICENSE_PLATE_ID
+from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
 from .action import ActionVector
 
 class Detector:
     def __init__(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        self.track_history = defaultdict(lambda: deque(maxlen=60))
+        self.track_history = defaultdict(lambda: deque(maxlen=60)) # maxlen eq lstm input
 
         self.pose_model = YOLO(Config.POSE_MODEL_PATH)
         self.yolo_base = YOLO(Config.BASE_MODEL_PATH)
@@ -20,7 +20,7 @@ class Detector:
         
         self._load_lstm_model()
 
-    def _load_lstm_model(self):
+    def _load_lstm_model(self):  # loads lstm TODO borys przesuń to do lstm.py
         self.detection_model = MultiClassLSTM()
 
         lstm_path = Config.LSTM_MODEL_PATH
@@ -38,17 +38,7 @@ class Detector:
             print(f"[ERROR] Error during loading LSTM model: {e}")
             self.detection_model = None
 
-    def predict_action(self, sequence_tensor):
-        """
-        Wykonuje predykcję akcji na podstawie sekwencji 30 klatek.
-        
-        Args:
-            sequence_tensor (torch.Tensor): Tensor o kształcie (1, 30, 34)
-                                            Batch=1, Seq=30, Features=34
-        Returns:
-            str: Nazwa wykrytej akcji (np. "Boksowanie")
-        """
-
+    def predict_action(self, sequence_tensor): # predicts action using lstm, TODO to też przesuń
         if self.detection_model is None:
             return "LSTM is not loaded!"
 
@@ -71,7 +61,7 @@ class Detector:
         return vector_list
 
     
-    def detect_base_yolo(self, frames):
+    def detect_base_yolo(self, frames): # detects and count objects on frame using yolo
         results = self.yolo_base.track(frames, verbose=False, half=True)
         vector_list = []
         for result in results:
@@ -87,7 +77,7 @@ class Detector:
                 
         return vector_list
     
-    def detect_yolo_pose(self, frames):
+    def detect_yolo_pose(self, frames): # detects people on frame using yolo pose and detects actions using lstm
         results = self.pose_model.track(frames, persist=True, verbose=False, half=True)
         vector_list = []
         for result in results:
@@ -108,9 +98,8 @@ class Detector:
                     self.track_history[track_id].append(flat_kps)
 
                     action_id = 0
-                    action_label = "inne"
 
-                    if len(self.track_history[track_id]) == 60:
+                    if len(self.track_history[track_id]) == 60: # TODO Borys popraw to bo mi się nie podoba. Daj to do innej funkcji czy coś
 
                         sequence = np.array(self.track_history[track_id])
                         input_tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device) 
@@ -122,7 +111,7 @@ class Detector:
         return vector_list
     
     @staticmethod
-    def normalize(kps):
+    def normalize(kps): # keypoints normalization relative to torso
         l_sh, r_sh = kps[5], kps[6]
         l_hip, r_hip = kps[11], kps[12]
 
