@@ -52,10 +52,8 @@ class Config:
     
     TRAIN_PROJECT_DIR = os.path.join(BASE_DIR, os.getenv('TRAIN_PROJECT_DIR'))
 
-    TRAIN_MODEL_PATH = os.path.join(BASE_DIR, os.getenv('TRAIN_MODEL_PATH'))
-    TRAIN_RUN_NAME = os.getenv('TRAIN_RUN_NAME')
     TRAIN_DATA_YAML = os.getenv('TRAIN_DATA_YAML')
-    TRAIN_EPOCHS = int(os.getenv('TRAIN_EPOCHS'))
-    TRAIN_IMG_SIZE = int(os.getenv('TRAIN_IMG_SIZE'))
-    TRAIN_DEVICE = os.getenv('TRAIN_DEVICE')
-    TRAIN_BATCH = int(os.getenv('TRAIN_BATCH'))
+
+    ROBOFLOW_API_KEY = os.getenv('ROBOFLOW_API_KEY')
+    ROBOFLOW_WORKSPACE = os.getenv('ROBOFLOW_WORKSPACE')
+    ROBOFLOW_PROJECT = os.getenv('ROBOFLOW_PROJECT')
