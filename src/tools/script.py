@@ -116,7 +116,7 @@ def download_coco_script(args: argparse.Namespace) -> None:
 def download_license_script(args: argparse.Namespace) -> None:
     rf = Roboflow(Config.ROBOFLOW_API_KEY)
     project = rf.workspace(Config.ROBOFLOW_WORKSPACE).project(Config.ROBOFLOW_PROJECT)
-    version = project.version(1)
+    version = project.version(Config.ROBOFLOW_DATASET_VERSION)
     version.download('yolo26', location=args.path)
 
 def update_dataset_yaml(dataset_path: str) -> None:
