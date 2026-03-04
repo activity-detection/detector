@@ -1,35 +1,28 @@
 import torch
 import numpy as np
 from collections import defaultdict, deque
-import cv2
+from ultralytics import YOLO
 
-from .config import Config
-from .action_recorder import ActionRecorder
+from .lstm import MultiClassLSTM
+from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
+from .action import ActionVector
 
 class Detector:
-    def __init__(self, models, anonymizer, buffer_seconds=5, post_event_seconds=3, fps=30):
+    def __init__(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        self.track_history = defaultdict(lambda: deque(maxglen=30))
-        self.recorders = {}
-        self.dangers = {1, 2}
+        self.track_history = defaultdict(lambda: deque(maxlen=60)) # maxlen eq lstm input
+
+        self.pose_model = YOLO(Config.POSE_MODEL_PATH)
+        self.yolo_base = YOLO(Config.BASE_MODEL_PATH)
+
+        self.fps = Config.FRAME_RATE
         
-        self.CLASS_NAMES = {
-            0: "inne", 
-            1: "przysiad",
-            2: "pajacyk"
-        }
+        self._load_lstm_model()
 
-        self.detection_model = models["detection"]["model"]
-        self.pose_model = models["pose"]["model"]
-        self.plates_model = models["plates"]["model"]
+    def _load_lstm_model(self):  # loads lstm TODO borys przesuń to do lstm.py
+        self.detection_model = MultiClassLSTM()
 
-
-        self.anonymizer = anonymizer
-        self.buffer_seconds = buffer_seconds
-        self.post_event_seconds = post_event_seconds
-        self.fps = fps
-        
         lstm_path = Config.LSTM_MODEL_PATH
         
         try:
@@ -37,145 +30,102 @@ class Detector:
             self.detection_model.load_state_dict(checkpoint)
             self.detection_model.to(self.device)
             self.detection_model.eval()
-            print(f"[INFO] Model LSTM załadowany pomyślnie z {lstm_path}")
+            print(f"[INFO] LSTM Model correctly loaded from {lstm_path}")
         except FileNotFoundError:
-            print(f"[ERROR] Nie znaleziono pliku modelu: {lstm_path}")
+            print(f"[ERROR] File not found: {lstm_path}")
             self.detection_model = None
         except Exception as e:
-            print(f"[ERROR] Błąd ładowania modelu LSTM: {e}")
+            print(f"[ERROR] Error during loading LSTM model: {e}")
             self.detection_model = None
 
-    def predict_action(self, sequence_tensor):
-        """
-        Wykonuje predykcję akcji na podstawie sekwencji 30 klatek.
-        
-        Args:
-            sequence_tensor (torch.Tensor): Tensor o kształcie (1, 30, 34)
-                                            Batch=1, Seq=30, Features=34
-        Returns:
-            str: Nazwa wykrytej akcji (np. "Boksowanie")
-        """
-
+    def predict_action(self, sequence_tensor): # predicts action using lstm, TODO to też przesuń
         if self.detection_model is None:
-            return "LSTM się nie załadował!"
+            return "LSTM is not loaded!"
 
-        # Przeniesienie danych na to samo urządzenie co model
         sequence_tensor = sequence_tensor.to(self.device)
 
-        # Sekcja bez liczenia gradientów (szybciej i lżej dla pamięci)
         with torch.no_grad():
-            # 1. Inferencja (Forward pass)
-            outputs = self.detection_model(sequence_tensor) # Wynik np. [-2.5, 4.1, 0.2]
+            outputs = self.detection_model(sequence_tensor)
             
-            # 2. Wybór klasy o najwyższym wyniku
             _, predicted_idx = torch.max(outputs, 1)
-            class_id = predicted_idx.item() # Zamiana tensora na zwykłą liczbę (int)
+            class_id = predicted_idx.item()
             
-            # Opcjonalnie: Progowanie pewności (Confidence Threshold)
-            # probs = torch.softmax(outputs, dim=1)
-            # confidence = probs[0][class_id].item()
-            # if confidence < 0.6: return "Unknown"
-
-        # 3. Mapowanie ID na nazwę (np. 0 -> "Boksowanie")
-        return class_id, self.CLASS_NAMES.get(class_id, f"Unknown ({class_id})")
+        return class_id
     
-    def process_batch_multiperson(self, batch_frames):
+    def process_batch(self, frames):
+        vectors_base = self.detect_base_yolo(frames)
+        vectors_pose = self.detect_yolo_pose(frames)
 
-        results = self.pose_model.track(batch_frames, persist=True, verbose=False)
+        vector_list = [x + y for x, y in zip(vectors_base, vectors_pose)]
 
-        processed_frames = []
+        return vector_list
 
-        # Dla każdej klatki i wyników dla niej w batchu
-        for _, (frame, result) in enumerate(zip(batch_frames, results)):
-            
-            # ID osób obecnych w klatce
-            present_ids = set()
-
+    
+    def detect_base_yolo(self, frames): # detects and count objects on frame using yolo
+        results = self.yolo_base.track(frames, verbose=False, half=True)
+        vector_list = []
+        for result in results:
+            classes = []
+            for box in result.boxes:
+                class_id = int(box.cls[0])
+                if class_id in BASE_YOLO_MAPPING:
+                    field_name = BASE_YOLO_MAPPING[class_id]
+                    classes.append(field_name)
+            vector = ActionVector(classes)
+            vector.base_yolo_result = result
+            vector_list.append(vector)
+                
+        return vector_list
+    
+    def detect_yolo_pose(self, frames): # detects people on frame using yolo pose and detects actions using lstm
+        results = self.pose_model.track(frames, persist=True, verbose=False, half=True)
+        vector_list = []
+        for result in results:
+            vector = ActionVector()
+            vector.pose_results = result
             if result.boxes is not None and result.boxes.id is not None:
-                # Pobieramy ID i Keypoints z wyników
-                # id to tensor, zamieniamy na inty
                 track_ids = result.boxes.id.int().cpu().tolist()
+                person = {'person' : len(track_ids)}
+                vector.update(person)
 
-                keypoints = result.keypoints.xy.cpu().numpy() # (N, 17, 2)
-
-                # Iterujemy po KAŻDEJ wykrytej osobie w tej klatce
-                for person_idx, track_id in enumerate(track_ids):            
-
-                    # Dodajemy ID do listy obecnych
-                    present_ids.add(track_id)
-
-                    kps = keypoints[person_idx] # (17, 2)
-
-                    # Musisz pobrać wymiary obrazu, np. z pierwszej klatki batcha
-                    h, w = batch_frames[0].shape[:2]
-
-                    # Kopiujemy, żeby nie psuć oryginału (jeśli potrzebny do rysowania)
-                    kps_norm = kps.copy()
-                    kps_norm[:, 0] /= w  # X dzielimy przez szerokość
-                    kps_norm[:, 1] /= h  # Y dzielimy przez wysokość
-                    flat_kps = kps_norm.flatten() # (34, )             
+                keypoints = result.keypoints.xy.cpu().numpy()
+                lstm_list = []
+                for person_idx, track_id in enumerate(track_ids):
+                    kps = keypoints[person_idx]
+        
+                    flat_kps = self.normalize(kps)
 
                     self.track_history[track_id].append(flat_kps)
 
-                    # Inicjalizacja rekordera jeśli nowy
-                    if track_id not in self.recorders:
-                        self.recorders[track_id] = ActionRecorder(
-                            self.buffer_seconds, self.post_event_seconds, self.fps
-                        )
-                    recorder = self.recorders[track_id]
-
                     action_id = 0
-                    action_label = "inne"
 
-                    # Czy osoba dla id ma historię 30 klatek
-                    if len(self.track_history[track_id]) == 30:
-                        # --- TUTAJ URUCHAMIASZ LSTM DLA TEJ OSOBY ---     
+                    if len(self.track_history[track_id]) == 60: # TODO Borys popraw to bo mi się nie podoba. Daj to do innej funkcji czy coś
 
-                        # Przygotowanie danych (1, 30, 34)
                         sequence = np.array(self.track_history[track_id])
                         input_tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device) 
 
-                        action_id, action_label = self.predict_action(input_tensor)
+                        action_id = self.predict_action(input_tensor)
+                        lstm_list.append(LSTM_MAPPING[action_id])
+                vector.update(lstm_list)
+            vector_list.append(vector)
+        return vector_list
+    
+    @staticmethod
+    def normalize(kps): # keypoints normalization relative to torso
+        l_sh, r_sh = kps[5], kps[6]
+        l_hip, r_hip = kps[11], kps[12]
 
-                    if self.recorders:
-                        plates_results = self.plates_model(frame, verbose=False)[0]
+        hc_x = (l_hip[0] + r_hip[0]) / 2
+        hc_y = (l_hip[1] + r_hip[1]) / 2
+        
+        sc_y = (l_sh[1] + r_sh[1]) / 2
+        
+        torso_h = np.abs(hc_y - sc_y)
+        if torso_h < 1.0: torso_h = 1.0 
 
-                        self.anonymizer.anonymize(frame, result, "pose")
-                        self.anonymizer.anonymize(frame, plates_results, "box")
+        kps_norm = kps.copy().astype(np.float32)
+        kps_norm[:, 0] = (kps[:, 0] - hc_x) / torso_h
+        kps_norm[:, 1] = (kps[:, 1] - hc_y) / torso_h
 
-                    # Logika nagrywania DLA WIDOCZNYCH
-                    if action_id in self.dangers:
-                        recorder.process(frame, interest=True)
-                    else:
-                        saved_file = recorder.process(frame, interest=False)
-                        if saved_file:
-                            print(f"[INFO] Zapisano klip dla ID {track_id}: {saved_file}")
-
-
-                    # Wizualizacja (np. wypisanie akcji nad głową tej osoby)
-                    box = result.boxes.xyxy[person_idx].cpu().numpy()
-                    x1, y1, _, _ = map(int, box)
-                    cv2.putText(frame, f"ID {track_id}: {action_label}", (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                    
-            # Kopiujemy klucze (list(self.recorders.keys())), bo możemy usuwać elementy w pętli
-            for r_id in list(self.recorders.keys()):
-                if r_id not in present_ids:
-                    recorder = self.recorders[r_id]
-                    
-                    # Wywołujemy process z interest=False.
-                    # To spowoduje dekrementację frames_left_to_record w ActionRecorderze.
-                    saved_file = recorder.process(frame, interest=False)
-                    
-                    if saved_file:
-                        print(f"[INFO] Zapisano klip (po zniknięciu) dla ID {r_id}: {saved_file}")
-                        # Skoro plik zapisany, to resetujemy stan rekordera. 
-                        # Można go usunąć, jeśli nie chcemy trzymać historii bufora dla nieobecnych.
-                        del self.recorders[r_id]
-                        # Warto też wyczyścić historię LSTM
-                        if r_id in self.track_history:
-                            del self.track_history[r_id]
-
-            processed_frames.append(frame)
-
-        return processed_frames
+        flat_kps = kps_norm[:, :2].flatten()
+        return flat_kps

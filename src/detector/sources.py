@@ -16,6 +16,13 @@ class VideoSource(ABC):
         if hasattr(self, 'cap') and self.cap.isOpened():
             return self.cap.get(cv2.CAP_PROP_FPS)
         return 30.0
+    
+    def get_frame_size(self):
+        if hasattr(self, 'cap') and self.cap.isOpened():
+            width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            return (width, height)
+        raise ValueError('Video Capture is closed')
 
 class RTSPSource(VideoSource):
     def __init__(self, url):
