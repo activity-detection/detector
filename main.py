@@ -19,8 +19,9 @@ def main():
     Config.FRAME_RATE = source.get_frame_rate()
     detector = Detector()
     action_classes = load_action_classes(Config.ACTION_VECTORS_PATH)
-    fps = FPS_estimator()
     batch = []
+    fps = FPS_estimator()
+    fps.begin()
     try:
         while True:
             ret, frame = source.get_frame()
@@ -31,7 +32,7 @@ def main():
                 vector_list = detector.process_batch(batch)
                 for vector, frame in zip(vector_list, batch):
                     for action in action_classes:
-                        action.next_frame(frame, vector)
+                        action.check(frame, vector)
                     print(vector)
                 batch.clear()
                 fps.end()
@@ -41,6 +42,9 @@ def main():
 
     except KeyboardInterrupt:
         print("Stopped by user")
+        for action in action_classes:
+            print(action.trigger_count)
+            action.stop(info=False)
     finally:
         source.release()
 

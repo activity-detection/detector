@@ -14,55 +14,22 @@ class Detector:
         self.track_history = defaultdict(lambda: deque(maxlen=60)) # maxlen eq lstm input
 
         self.pose_model = YOLO(Config.POSE_MODEL_PATH)
-        self.yolo_base = YOLO(Config.BASE_MODEL_PATH)
+        self.base_model = YOLO(Config.BASE_MODEL_PATH)
 
         self.fps = Config.FRAME_RATE
         
-        self._load_lstm_model()
-
-    def _load_lstm_model(self):  # loads lstm TODO borys przesuń to do lstm.py
-        self.detection_model = MultiClassLSTM()
-
-        lstm_path = Config.LSTM_MODEL_PATH
-        
-        try:
-            checkpoint = torch.load(lstm_path, map_location=self.device)
-            self.detection_model.load_state_dict(checkpoint)
-            self.detection_model.to(self.device)
-            self.detection_model.eval()
-            print(f"[INFO] LSTM Model correctly loaded from {lstm_path}")
-        except FileNotFoundError:
-            print(f"[ERROR] File not found: {lstm_path}")
-            self.detection_model = None
-        except Exception as e:
-            print(f"[ERROR] Error during loading LSTM model: {e}")
-            self.detection_model = None
-
-    def predict_action(self, sequence_tensor): # predicts action using lstm, TODO to też przesuń
-        if self.detection_model is None:
-            return "LSTM is not loaded!"
-
-        sequence_tensor = sequence_tensor.to(self.device)
-
-        with torch.no_grad():
-            outputs = self.detection_model(sequence_tensor)
-            
-            _, predicted_idx = torch.max(outputs, 1)
-            class_id = predicted_idx.item()
-            
-        return class_id
+        self.action_model = MultiClassLSTM()
     
     def process_batch(self, frames):
-        vectors_base = self.detect_base_yolo(frames)
-        vectors_pose = self.detect_yolo_pose(frames)
+        vectors_base = self.detect_objects(frames)
+        vectors_pose = self.detect_people_actions(frames)
 
         vector_list = [x + y for x, y in zip(vectors_base, vectors_pose)]
 
         return vector_list
-
     
-    def detect_base_yolo(self, frames): # detects and count objects on frame using yolo
-        results = self.yolo_base.track(frames, verbose=False, half=True)
+    def detect_objects(self, frames): # detects and count objects on frame using yolo
+        results = self.base_model.track(frames, verbose=False, half=True)
         vector_list = []
         for result in results:
             classes = []
@@ -77,7 +44,7 @@ class Detector:
                 
         return vector_list
     
-    def detect_yolo_pose(self, frames): # detects people on frame using yolo pose and detects actions using lstm
+    def detect_people_actions(self, frames): # detects people on frame using yolo pose and detects actions using lstm
         results = self.pose_model.track(frames, persist=True, verbose=False, half=True)
         vector_list = []
         for result in results:
@@ -92,19 +59,16 @@ class Detector:
                 lstm_list = []
                 for person_idx, track_id in enumerate(track_ids):
                     kps = keypoints[person_idx]
-        
                     flat_kps = self.normalize(kps)
-
                     self.track_history[track_id].append(flat_kps)
-
+                    
                     action_id = 0
-
                     if len(self.track_history[track_id]) == 60: # TODO Borys popraw to bo mi się nie podoba. Daj to do innej funkcji czy coś
 
                         sequence = np.array(self.track_history[track_id])
                         input_tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device) 
 
-                        action_id = self.predict_action(input_tensor)
+                        action_id = self.action_model.predict(input_tensor)
                         lstm_list.append(LSTM_MAPPING[action_id])
                 vector.update(lstm_list)
             vector_list.append(vector)

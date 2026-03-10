@@ -5,7 +5,6 @@ from numpy import mean
 
 class FPS_estimator:
     def __init__(self, buffer_len=200):
-        self.last_time = perf_counter()
         self.frame_rate_buffer = deque(maxlen=buffer_len)
 
     def begin(self):

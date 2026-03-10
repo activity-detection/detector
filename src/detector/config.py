@@ -17,6 +17,7 @@ BASE_YOLO_MAPPING = {
 LICENSE_PLATE_ID = 8
 
 LSTM_MAPPING = {
+    -1 : 'error',
     0 : 'normal',
     1 : 'jumping_jacks',
     2 : 'squat'

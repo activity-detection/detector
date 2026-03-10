@@ -4,11 +4,17 @@ import cv2
 import threading
 from datetime import datetime
 from pathlib import Path
-from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
+from enum import Enum, auto
 import os
+
+from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
 from .anonymizer import Anonymizer
 
 MIN_TRIGGER_COUNT = 10
+
+class ActionState(Enum):
+    IDLE = auto()
+    RECORDING = auto()
 
 class ActionVector:
     pose_results = None
@@ -58,59 +64,67 @@ class ActionVector:
         return f"ActionVector({', '.join(active_counts)})"
 
 class ActionClass:
-    def __init__(self, name: str, required_vector: ActionVector, pre_buffer_seconds=2.0, cooldown_seconds=2.0):
+    def __init__(self, name: str, required_vector: ActionVector, pre_buffer_seconds=2.0, cooldown_seconds=2.0, max_duration=10.0):
         self.name = name
         self.required_vector = required_vector
         buffer_len = int(pre_buffer_seconds * Config.FRAME_RATE)
         self.pre_buffer = deque(maxlen=buffer_len)
         self.post_buffer = []
         
-        self.is_recording = False
+        self.state = ActionState.IDLE
         self.inactive_frames = 0
+        self.idling = 0
         self.trigger_count = 0
         
         self.max_inactive_frames = int(cooldown_seconds * Config.FRAME_RATE)
+        self.max_duration_frames = int(max_duration * Config.FRAME_RATE)
 
-    def next_frame(self, frame, current_vector: ActionVector):
-        trigger_active = current_vector >= self.required_vector
+    def check(self, frame, current_vector: ActionVector):
+        triggered = current_vector >= self.required_vector #TODO Dodać metodykę dla triggerowania
         frame_vector = {'frame' : frame, 'vector' : current_vector}
-        if trigger_active:
-            self.trigger_count += 1
 
-        if self.is_recording:
-            self.post_buffer.append(frame_vector)
-            
-            if trigger_active:
-                self.inactive_frames = 0
+        if self.state is ActionState.IDLE:
+            if triggered:
+                self.state = ActionState.RECORDING
+                self.post_buffer.append(frame_vector)
+
+                self.trigger_count += 1
+                self.idling = 0
             else:
-                self.inactive_frames += 1
-                
-            if self.inactive_frames >= self.max_inactive_frames:
-                self._stop_recording()
-        
-        else:
-            self.pre_buffer.append(frame_vector)
-            if trigger_active:
-                self._start_recording()
+                self.pre_buffer.append(frame_vector)
 
-    def _start_recording(self):
-        self.is_recording = True
-        self.inactive_frames = 0
-        self.post_buffer = []
+        elif self.state is ActionState.RECORDING:
+            self.post_buffer.append(frame_vector)
+            if triggered:
+                self.trigger_count += 1
+                self.idling = 0
+            else:
+                self.idling += 1
+                if self.idling >= self.max_inactive_frames:
+                    self.stop()
+            if len(self.post_buffer) >= self.max_duration_frames:
+                self.stop()
+    
+    def stop(self, info=True):
+        if self.state is not ActionState.RECORDING:
+            if info:
+                print(f"[{self.name}] Próba zakończenia nagrywania w stanie: {self.state}!")
+            return
 
-    def _stop_recording(self):
-        self.is_recording = False
+        self.state = ActionState.IDLE
+
+        full_clip = list(self.pre_buffer) + self.post_buffer
         if self.trigger_count >= MIN_TRIGGER_COUNT:
-            full_clip = list(self.pre_buffer) + self.post_buffer
-            
             save_thread = threading.Thread(
                 target=self._save_clip_task, 
                 args=(full_clip, self.name)
             )
             save_thread.start()
+
         self.trigger_count = 0
         self.pre_buffer.clear()
         self.post_buffer = []
+        self.idling = 0
 
     @staticmethod
     def _save_clip_task(frame_vectors, action_name): # TODO wysyłanie do backend Bartka
@@ -132,7 +146,7 @@ class ActionClass:
             out.release()
 
     def __str__(self) -> str:
-        status = "RECORDING" if self.is_recording else "IDLE"
+        status = "RECORDING" if self.state is ActionState.RECORDING else "IDLE"
         return f"ActionClass(name='{self.name}', status={status}, cooldown={self.inactive_frames}/{self.max_inactive_frames})"
 
 def load_action_classes(path: str) -> list[ActionClass]: # loads action classes from csv file
