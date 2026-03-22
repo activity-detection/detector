@@ -2,7 +2,7 @@ from src.detector.config import Config
 from src.detector.sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
 from src.detector.detector import Detector
 from src.tools.fps_estimator import FPS_estimator 
-from src.detector.action import load_action_classes
+from src.detector.action import Recorder
 
 def get_source():
     if Config.MODE == 'VIDEO': return VideoFileSource(Config.SOURCE_PATH)
@@ -18,7 +18,8 @@ def main():
     source = get_source()
     Config.FRAME_RATE = source.get_frame_rate()
     detector = Detector()
-    action_classes = load_action_classes(Config.ACTION_VECTORS_PATH)
+    recorder = Recorder(2, 2, 6)
+    recorder.load_action_classes(Config.ACTION_VECTORS_PATH)
     batch = []
     fps = FPS_estimator()
     fps.begin()
@@ -31,9 +32,8 @@ def main():
             if len(batch) == Config.BATCH_SIZE:
                 vector_list = detector.process_batch(batch)
                 for vector, frame in zip(vector_list, batch):
-                    for action in action_classes:
-                        action.check(frame, vector)
-                    print(vector)
+                    recorder.check_frame(frame, vector)
+                    #print(vector)
                 batch.clear()
                 fps.end()
                 print(f'FPS: {fps.get_fps():.2f}')
@@ -42,9 +42,6 @@ def main():
 
     except KeyboardInterrupt:
         print("Stopped by user")
-        for action in action_classes:
-            print(action.trigger_count)
-            action.stop(info=False)
     finally:
         source.release()
 
