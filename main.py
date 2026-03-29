@@ -20,6 +20,8 @@ def main():
     detector = Detector()
     recorder = Recorder(2, 2, 6)
     recorder.load_action_classes(Config.ACTION_VECTORS_PATH)
+    for ac in recorder.action_classes:
+        print(ac.action_vector)
     batch = []
     fps = FPS_estimator()
     fps.begin()
@@ -33,10 +35,10 @@ def main():
                 vector_list = detector.process_batch(batch)
                 for vector, frame in zip(vector_list, batch):
                     recorder.check_frame(frame, vector)
-                    #print(vector)
+                    print(vector)
                 batch.clear()
                 fps.end()
-                print(f'FPS: {fps.get_fps():.2f}')
+                #print(f'FPS: {fps.get_fps():.2f}')
                 
                 fps.begin()
 

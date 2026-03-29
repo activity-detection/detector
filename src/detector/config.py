@@ -41,6 +41,9 @@ class Config:
     BATCH_SIZE = int(os.getenv('BATCH_SIZE', '4'))
     CLIP_FOLDER = os.getenv('CLIP_FOLDER')
 
+    # Video forwarding
+    DB_URL = os.getenv('DB_URL')
+
     CAM_USER = os.getenv('CAMERA_USER')
     CAM_PASS = os.getenv('CAMERA_PASSWORD')
     CAM_IP = os.getenv('CAMERA_IP')
