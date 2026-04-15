@@ -98,6 +98,8 @@ class Recorder:
             self.buffer.clear()
         else:
             buffer_len = self.buffer_frames
+            if action_class.awaiting < buffer_len:
+                buffer_len = action_class.awaiting
             if buffer_len >= len(self.recording):
                 offset = 0
             else:

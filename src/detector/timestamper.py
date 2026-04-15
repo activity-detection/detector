@@ -102,27 +102,32 @@ class Timestamper:
                 prev_det_vector = curr_det_vector
 
         detection = self._detection_stamp(prev_det_vector, time_from, len(detections_per_second))
-        detections.append(detection)
+        if detection: # we ignore empty
+            detections.append(detection)
 
         return detections
     
     @staticmethod
-    def _detection_stamp(det_vector: dict[str, int], time_from: int, time_to: int) -> DetectionStampModel:
+    def _detection_stamp(det_vector: dict[str, int], time_from: int, time_to: int) -> DetectionStampModel | None:
         objects: list[ObjectModel] = []
         for detection, count in det_vector.items():
-            if detection == "person": # baza chce human
-                detection = "human"
-            objects.append(ObjectModel(
-                name=detection,
-                count= count
-            ))
-        return DetectionStampModel(
-            objects=objects,
-            timestamp={
-                "from": f"PT{time_from}S",
-                "to": f"PT{time_to}S"
-            }
-        )
+            if count > 0: # db will not accept a zero count
+                if detection == "person": # in db it reads human not person
+                    detection = "human"
+                objects.append(ObjectModel(
+                    name=detection,
+                    count= count
+                ))
+        if objects:
+            return DetectionStampModel(
+                objects=objects,
+                timestamp={
+                    "from": f"PT{time_from}S",
+                    "to": f"PT{time_to}S"
+                }
+            )
+        else:
+            return None # thus we return None if no count is > 0
 
     @staticmethod
     def _event_stamp(name: str, time_from: int, time_to: int) -> list[EventStampModel]:

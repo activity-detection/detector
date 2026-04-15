@@ -23,6 +23,7 @@ class ActionClass:
         self.trigger_history: deque[bool] = deque(maxlen=config.check_count)
         self.state = State.IDLE
         self.idling = 0
+        self.awaiting = 0 # TODO figure out a cap
         self.frame_count = 0
         self.triggered = False
         self.config = config
@@ -69,7 +70,10 @@ class ActionClass:
             elif self.state is State.IDLE:
                 if self.triggered:
                     self.state = State.ACTIVE
+                    self.frame_count += 1
+                    self.awaiting = 0
                     return Command.BEGIN
+                self.awaiting += 1
                 return Command.AWAIT
             
         return Command.AWAIT
@@ -79,6 +83,7 @@ class ActionClass:
         self.frame_count = 0
         self.idling_final = self.idling
         self.idling = 0
+        self.awaiting += 1
         return Command.END
 
     def __str__(self) -> str:
