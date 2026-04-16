@@ -1,7 +1,8 @@
-import os
-from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, computed_field
 from dotenv import load_dotenv
+
+import os
 
 load_dotenv()
 
@@ -37,6 +38,7 @@ class Settings(BaseSettings):
     FRAME_RATE: float = 25.
     BATCH_SIZE: int = 8
     DB_URL: str = ""
+    SEQUENCE_FRAMES_GAP: int = 15 # TODO może to gdzieś przeniść
 
     SOURCE_PATH: str
     ACTION_VECTORS_PATH: str

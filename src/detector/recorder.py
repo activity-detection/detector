@@ -1,10 +1,12 @@
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 import numpy as np
 import csv
 
 from src.detector.clip_saver import ClipSaver
+from src.detector.sequencer import Sequencer
 from src.detector.vectors import FrameVector, ActionVector
 from src.detector.config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
 from src.detector.action import ActionClass, ActionConfig
@@ -25,7 +27,6 @@ class RecorderAction:
     
 
 class Recorder:
-
     def __init__(
         self, 
         buffer_len: int, 
@@ -38,6 +39,8 @@ class Recorder:
         self.recording: list[FrameVector] = []
         self.action_classes: list[ActionClass] = []
         self.action_stack: deque[RecorderAction] = deque()
+        self.sequences: Sequencer = Sequencer()
+        self.clip_saver: ClipSaver = ClipSaver(self.sequences, send=send)
         self.state = State.IDLE
         self.send = send
 
@@ -77,12 +80,15 @@ class Recorder:
                 self._add(action_class)
             elif command is Command.END:
                 try:
-                    self._remove(action_class)
+                    recorder_action, index = self._find_action_in_stack(action_class)
                 except ActionNotInStackError as e:
                     logger.error(f'Failed to remove action {action_class.name} from Recorder stack: {e}')
                     if action_class.state is not State.IDLE:
                         logger.error(f'An ActionClass outside of Recorder stack was not IDLE. Stopping.')
                         action_class.end()
+                else:
+                    self._save_clip(recorder_action)
+                    self._remove(index)
 
         if Command.CONTINUE in command_list or Command.BEGIN in command_list:
             self.recording.append(FrameVector(frame, reference_vector))
@@ -108,13 +114,11 @@ class Recorder:
             action_recording = RecorderAction(action_class, offset, beginning)
             self.action_stack.append(action_recording)
 
-    def _remove(self, action_class: ActionClass):
+    def _remove(self, index: int):
 
-        recorder_action, index = self._find_action_in_stack(action_class)
-
+        recorder_action = self.action_stack[index]
+        
         self._set_action_end(recorder_action)
-
-        self._save_clip(recorder_action)
 
         self._cleanup_stack(index)
         
@@ -148,20 +152,41 @@ class Recorder:
                 self.buffer.extend(self.recording[-buffer_len:])
                 self.recording = []
 
-    def _save_clip(self, recorder_action: RecorderAction):
-        clip_saver = ClipSaver(send=self.send)
-        
+    def _save_clip(
+        self, 
+        recorder_action: RecorderAction, 
+    ):
         recording = self.recording.copy()
         action_name = recorder_action.action.name
         beginning_sec = int(recorder_action.beginning / Config.FRAME_RATE)
         end_sec = int(recorder_action.end / Config.FRAME_RATE) + 1
         reference_counter = recorder_action.action.action_vector.counter
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{action_name}_{timestamp}.mp4"
 
-        clip_saver.save_in_background(
+        first_inactive_count = recorder_action.action.awaiting_final
+        last_inactive_count = recorder_action.action.idling_final
+        frame_gap = Config.SEQUENCE_FRAMES_GAP
+        
+        #TODO ogarnąć te ify (może)
+        if self.sequences.is_active(action_name):
+            if first_inactive_count <= frame_gap and last_inactive_count <= frame_gap:
+                self.sequences.add(action_name, filename)
+            elif first_inactive_count <= frame_gap and last_inactive_count > frame_gap:
+                self.sequences.add_close(action_name, filename)
+            elif first_inactive_count > frame_gap:
+                self.sequences.close(action_name)
+                if last_inactive_count <= frame_gap:
+                    self.sequences.add(action_name, filename)
+        elif last_inactive_count <= frame_gap:
+            self.sequences.add(action_name, filename)
+
+        self.clip_saver.save_in_background(
             recording,
             action_name,
             beginning_sec,
             end_sec,
             reference_counter,
+            filename
         )
     

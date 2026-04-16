@@ -15,22 +15,26 @@ class Anonymizer:
     FADE_OUT_FRAMES = 15
 
     def __init__(self):        
-        self.tracked_faces = {} # {id : (face_geo, ttl)}
-        self.tracked_plates = {} # {id : (coords, ttl)}
+        pass
 
     def anonymize_clip(self, frame_vectors: list[FrameVector]):
         frames = [frame_vector.frame for frame_vector in frame_vectors]
         pose_results = [frame_vector.vector.pose_results for frame_vector in frame_vectors]
-        self.anonymize_faces_all(frames, pose_results)
         yolo_results = [frame_vector.vector.base_yolo_result for frame_vector in frame_vectors]
-        self.anonymize_license_plates_all(frames, yolo_results)
+        
+        # Use local trackers for this clip to avoid race conditions
+        tracked_faces = {}
+        tracked_plates = {}
+        
+        self.anonymize_faces_all(frames, pose_results, tracked_faces)
+        self.anonymize_license_plates_all(frames, yolo_results, tracked_plates)
         return frames
         
-    def anonymize_faces_all(self, frames: list[np.ndarray], results: Results): # anonymizes frame based on results from YOLO pose
+    def anonymize_faces_all(self, frames: list[np.ndarray], results: Results, tracked_faces: dict): # anonymizes frame based on results from YOLO pose
         for frame, result in zip(frames, results):
-            self.anonymize_faces(frame, result)
+            self.anonymize_faces(frame, result, tracked_faces)
 
-    def anonymize_faces(self, frame: np.ndarray, result: Results):
+    def anonymize_faces(self, frame: np.ndarray, result: Results, tracked_faces: dict):
         h, w = frame.shape[:2]
         current_faces = []
         if result.keypoints is not None:
@@ -41,20 +45,20 @@ class Anonymizer:
 
             if result.boxes.id is not None:
                 keypoints_id = result.boxes.id.data.cpu().numpy().astype(int)
-                self.tracked_faces = self._update_tracker(self.tracked_faces, current_faces, keypoints_id)
-                for key in self.tracked_faces:
-                    face = self.tracked_faces[key][0]
+                tracked_faces = self._update_tracker(tracked_faces, current_faces, keypoints_id)
+                for key in tracked_faces:
+                    face = tracked_faces[key][0]
                     self._apply_circular_mask(frame, face['x'], face['y'], face['r'], w, h)
             else:
                 for face in current_faces:
                     self._apply_circular_mask(frame, face['x'], face['y'], face['r'], w, h)
         return frame
 
-    def anonymize_license_plates_all(self, frames: list[np.ndarray], results: list[Results]): # anonymizes frame based on results from YOLO 
+    def anonymize_license_plates_all(self, frames: list[np.ndarray], results: list[Results], tracked_plates: dict): # anonymizes frame based on results from YOLO 
         for frame, result in zip(frames, results):
-            self.anonymize_license_plates(frame, result)
+            self.anonymize_license_plates(frame, result, tracked_plates)
 
-    def anonymize_license_plates(self, frame: np.ndarray, result: Results): # anonymizes license plates on frame
+    def anonymize_license_plates(self, frame: np.ndarray, result: Results, tracked_plates: dict): # anonymizes license plates on frame
         h, w = frame.shape[:2]
     
         current_plates = []
@@ -68,10 +72,10 @@ class Anonymizer:
                 else:
                     self._anonymize_box_rectangular(frame, coords, w, h)
 
-        self.tracked_plates = self._update_tracker(self.tracked_plates, current_plates, ids)
+        tracked_plates = self._update_tracker(tracked_plates, current_plates, ids)
         
-        for key in self.tracked_plates:
-            plate = self.tracked_plates[key][0]
+        for key in tracked_plates:
+            plate = tracked_plates[key][0]
             self._anonymize_box_rectangular(frame, plate, w, h)
 
         return frame

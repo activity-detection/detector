@@ -71,7 +71,6 @@ class ActionClass:
                 if self.triggered:
                     self.state = State.ACTIVE
                     self.frame_count += 1
-                    self.awaiting = 0
                     return Command.BEGIN
                 self.awaiting += 1
                 return Command.AWAIT
@@ -83,7 +82,8 @@ class ActionClass:
         self.frame_count = 0
         self.idling_final = self.idling
         self.idling = 0
-        self.awaiting += 1
+        self.awaiting_final = self.awaiting + 1
+        self.awaiting = 1
         return Command.END
 
     def __str__(self) -> str:
