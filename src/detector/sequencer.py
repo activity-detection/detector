@@ -1,5 +1,6 @@
-from enum import Enum, auto
 from typing import TypedDict
+from enum import Enum, auto
+import threading
 import time
 
 
@@ -9,8 +10,8 @@ class RecState(Enum):
     AWAIT_UPLOAD = auto()
     UPLOADING = auto()
     SENT = auto()
-    FAILED = auto()  # New state for failed uploads
-
+    FAILED = auto()
+    STASHED = auto()
 
 RecordingModel = TypedDict(
     'RecordingModel',
@@ -39,47 +40,39 @@ SequenceModel = TypedDict(
 class Sequencer:
     def __init__(self) -> None:
         self.sequences: dict[str, list[SequenceModel]] = {}
+        self._lock = threading.Lock()
 
     def add_close(self, action_name: str, filename: str, state: RecState = RecState.AWAIT_SAVE):
         self.add(action_name, filename, state)
         self.close(action_name)
 
     def add(self, action_name: str, filename: str, state: RecState = RecState.AWAIT_SAVE):
-        current_time = time.time()
-        if action_name not in self.sequences:
-            sequence = self._make_new_sequence(filename, state, current_time)
-            self.sequences[action_name] = [sequence]
-
-        else: 
-            last_sequence = self.sequences[action_name][-1]
-            if last_sequence['state'] is SeqState.CLOSED:
+        with self._lock:
+            current_time = time.time()
+            if action_name not in self.sequences:
                 sequence = self._make_new_sequence(filename, state, current_time)
-                self.sequences[action_name].append(sequence)
+                self.sequences[action_name] = [sequence]
 
-            else:
-                recording = RecordingModel({
-                    'id': None,
-                    'state': state,
-                    'filename': filename,
-                    'created_at': current_time,
-                    'last_updated': current_time
-                })
-                last_sequence['recordings'].append(recording)
+            else: 
+                last_sequence = self.sequences[action_name][-1]
+                if last_sequence['state'] is SeqState.CLOSED:
+                    sequence = self._make_new_sequence(filename, state, current_time)
+                    self.sequences[action_name].append(sequence)
 
-    def close(self, action_name: str): # TODO drugi param boli, patrz clip_saver
-        last_sequence = self.sequences[action_name][-1]
-        last_sequence['state'] = SeqState.CLOSED
-        
-    def is_active(self, action_name: str) -> bool:
-        if action_name in self.sequences:
+                else:
+                    recording = RecordingModel({
+                        'id': None,
+                        'state': state,
+                        'filename': filename,
+                        'created_at': current_time,
+                        'last_updated': current_time
+                    })
+                    last_sequence['recordings'].append(recording)
+
+    def close(self, action_name: str):
+        with self._lock:
             last_sequence = self.sequences[action_name][-1]
-            state = last_sequence['state']
-            if state is SeqState.OPEN:
-                return True
-            else:
-                return False
-        else:
-            return False
+            last_sequence['state'] = SeqState.CLOSED
     
     @staticmethod
     def _make_new_sequence(filename: str, state: RecState, current_time: float) -> SequenceModel:
@@ -97,48 +90,83 @@ class Sequencer:
         })
 
         return sequence
+    
+    def is_active(self, action_name: str) -> bool:
+        with self._lock:
+            if action_name in self.sequences:
+                last_sequence = self.sequences[action_name][-1]
+                state = last_sequence['state']
+                if state is SeqState.OPEN:
+                    return True
+                else:
+                    return False
+            else:
+                return False
 
     def mark_as_state(self, action_name: str, filename: str, state: RecState, db_id: str | None = None):
-        current_time = time.time()
-        if action_name in self.sequences:
-            last_sequence = self.sequences[action_name][-1]
-            for rec in last_sequence['recordings']:
-                if rec.get('filename') == filename:
-                    rec['state'] = state
-                    rec['last_updated'] = current_time
-                    if state is RecState.SENT:
-                        rec['id'] = db_id
-                    break
+        with self._lock:
+            current_time = time.time()
+            if action_name in self.sequences:
+                last_sequence = self.sequences[action_name][-1]
+                for rec in last_sequence['recordings']:
+                    if rec.get('filename') == filename:
+                        rec['state'] = state
+                        rec['last_updated'] = current_time
+                        if state is RecState.SENT:
+                            rec['id'] = db_id
+                        break
+    
+    def get_id_sequence(self, action_name: str, filename: str) -> tuple[int | None, list[RecordingModel] | None]:
+        with self._lock:
+            sequences = self.sequences[action_name]
+            if sequences:
+                for sequence in sequences:
+                    recordings = sequence['recordings']
+                    for i, recording in enumerate(recordings):
+                        if filename == recording['filename']:
+                            return i, recordings
+            return (None, None)     
 
-    def get_stuck_recordings(self, max_age_seconds: float = 600.0) -> list[tuple[str, str]]:
+    def del_sequence(self, action_name: str, my_sequence: list[RecordingModel]):
+        with self._lock:
+            sequences = self.sequences[action_name]
+            if sequences:
+                for sequence in sequences:
+                    if my_sequence == sequence['recordings']:
+                        sequences.remove(sequence)
+
+    def cleanup_finished_sequences(self):
         """
-        Get recordings that have been stuck in non-terminal states for too long.
-        Returns list of (action_name, filename) tuples.
+        Deletes all CLOSED sequences that contain only 
+        recordings of a terminal state (SENT, FAILED, STASHED).
         """
-        current_time = time.time()
-        stuck_recordings: list[tuple[str, str]] = []
+        terminal_states = {RecState.SENT, RecState.FAILED, RecState.STASHED}
 
-        for action_name, sequences in self.sequences.items():
-            for sequence in sequences:
-                for recording in sequence['recordings']:
-                    state = recording['state']
-                    last_updated = recording.get('last_updated', recording.get('created_at', 0))
+        with self._lock:
+            for action_name in list(self.sequences.keys()):
+                # Remaining active sequences
+                active_sequences: list[SequenceModel] = []
+                
+                for sequence in self.sequences[action_name]:
+                    # Is sequence closed
+                    if sequence['state'] != SeqState.CLOSED:
+                        active_sequences.append(sequence)
+                        continue
+                        
+                    terminal = False
+                    for rec in sequence['recordings']:
+                        if rec['state'] in terminal_states:
+                            terminal = True
+                            break
+                    
+                    if terminal:
+                        continue
+                    active_sequences.append(sequence)
 
-                    # Consider recordings stuck if they're in intermediate states for too long
-                    if state in [RecState.AWAIT_UPLOAD, RecState.UPLOADING, RecState.SAVING]:
-                        if current_time - last_updated > max_age_seconds:
-                            stuck_recordings.append((action_name, recording['filename']))
+                # Aktualizujemy listę sekwencji dla danej akcji
+                self.sequences[action_name] = active_sequences
+                
+                # Remove key (action_name) if no sequences left
+                if not self.sequences[action_name]:
+                    del self.sequences[action_name]
 
-        return stuck_recordings
-
-    def cleanup_stuck_recordings(self, max_age_seconds: float = 600.0, mark_as_failed: bool = True):
-        """
-        Clean up recordings that have been stuck for too long.
-        Optionally mark them as failed instead of just removing them.
-        """
-        stuck_recordings = self.get_stuck_recordings(max_age_seconds)
-
-        for action_name, filename in stuck_recordings:
-            if mark_as_failed:
-                self.mark_as_state(action_name, filename, RecState.FAILED)
-            # Note: In a real implementation, you might want to remove the files from disk too

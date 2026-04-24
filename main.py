@@ -41,10 +41,9 @@ def main():
                 vector_list = detector.process_batch(batch)
                 for vector, frame in zip(vector_list, batch):
                     recorder.check_frame(frame, vector)
-                    print(vector)
+                    # print(vector)
                 batch.clear()
                 fps.end()
-                #print(f'FPS: {fps.get_fps():.2f}')
                 
                 fps.begin()
 

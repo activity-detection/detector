@@ -4,11 +4,12 @@ from pathlib import Path
 from typing import Any
 import threading
 import requests
-import numpy as np
 import json
-import cv2
-import os
 import time
+import os
+
+import numpy as np
+import cv2
 
 from src.detector.timestamper import Timestamper
 from src.detector.anonymizer import Anonymizer
@@ -16,6 +17,10 @@ from src.detector.sequencer import Sequencer, RecState
 from src.detector.vectors import FrameVector
 from src.detector.config import Config
 from src.detector import logger
+
+PAUSE_ON_ERROR = 1.0
+UPLOAD_LOOP_PAUSE = 0.5
+UPLOAD_WAIT = 1.0
 
 
 @dataclass
@@ -27,14 +32,14 @@ class UploadTask:
     beginning_sec: int
     end_sec: int
     reference_counter: Counter[str]
-    depends_on_filename: str | None = None  # Previous recording filename this depends on
     created_at: float | None = None
-    timeout_at: float | None = None  # When to upload without dependency
+    retries: int = 5
+    next_try_at: float | None = None
+    dependency: str | None = None  # Previous recording filename this depends on
+    stashed_dependency: str | None = None # Stashed for possible sequence continuity split
 
     def __post_init__(self):
         self.created_at = time.time()
-        # Wait up to 30 seconds for dependency, then upload without it
-        self.timeout_at = self.created_at + 30.0
 
 
 class ClipSaver:
@@ -53,6 +58,8 @@ class ClipSaver:
 
         self.upload_queue: deque[UploadTask] = deque()
         self.upload_lock = threading.Lock()
+        self.davy_jones_locker: deque[UploadTask] = deque()
+        self.davy_jones_lock = threading.Lock()
         self.worker_thread = None
         self.stop_worker = False
 
@@ -79,65 +86,69 @@ class ClipSaver:
             logger.info("Stopped upload worker thread")
 
     def _upload_worker_loop(self):
-        """Main loop for processing upload tasks"""
         while not self.stop_worker:
             try:
-                task = self._get_next_upload_task()
-                if task:
-                    self._process_upload_task(task)
-                else:
-                    # No tasks ready, sleep briefly
-                    time.sleep(0.1)
+                task_to_process = None
 
-                # Periodic cleanup of stuck tasks
-                self._cleanup_stuck_tasks()
+                with self.upload_lock:
+                    for task in self.upload_queue:
+                        if self._is_task_ready(task):
+                            task_to_process = task
+                            break 
+                
+                if task_to_process:
+                    self._process_upload_task(task_to_process)
+                else:
+                    time.sleep(UPLOAD_LOOP_PAUSE)
 
             except Exception as e:
                 logger.error(f"Error in upload worker: {e}", exc_info=True)
-                time.sleep(1.0)  # Brief pause on error
-
-    def _get_next_upload_task(self) -> UploadTask | None:
-        """Get the next task that's ready to upload (dependencies satisfied or timed out)"""
-        with self.upload_lock:
-            for task in self.upload_queue:
-                if self._is_task_ready(task):
-                    return self.upload_queue.popleft()
-        return None
+                time.sleep(PAUSE_ON_ERROR)
 
     def _is_task_ready(self, task: UploadTask) -> bool:
         """Check if a task is ready to upload"""
-        if task.depends_on_filename is None:
+        # Is there any dependency
+        if task.dependency is None:
             return True  # No dependency
+        
+        if task.next_try_at is not None:
+            if time.time() < task.next_try_at:
+                return False
 
         # Check if dependency is satisfied
-        if self._is_dependency_satisfied(task.action_name, task.depends_on_filename):
+        if self._is_dependency_satisfied(task):
             return True
 
-        # Check if we've timed out waiting for dependency
-        return time.time() >= task.timeout_at
-
-    def _is_dependency_satisfied(self, action_name: str, depends_on_filename: str) -> bool:
-        """Check if the dependency recording has been uploaded and has an ID"""
-        try:
-            recordings = self.sequencer.sequences[action_name][-1]['recordings']
-            for rec in recordings:
-                if rec['filename'] == depends_on_filename:
-                    return rec['state'] == RecState.SENT and rec['id'] is not None
-        except (KeyError, IndexError):
-            pass
         return False
+
+    # TODO sprawdzić warunki dla None
+    def _is_dependency_satisfied(self, task: UploadTask) -> bool:
+        """Check if the dependency recording has been uploaded and has an ID
+            Also stash the dependency if needed"""
+        action_name = task.action_name
+        dependency = task.dependency
+
+        if dependency is not None:
+            idx_in_seq, sequence = self.sequencer.get_id_sequence(action_name, dependency)
+
+            if sequence is not None and idx_in_seq is not None:
+                recording = sequence[idx_in_seq]
+                if recording['state'] == RecState.STASHED:
+                    task.stashed_dependency = task.dependency
+                    task.dependency = None
+                    return True
+                return recording['state'] == RecState.SENT and recording['id'] is not None
+        return True
 
     def _process_upload_task(self, task: UploadTask):
         """Process a single upload task"""
         try:
             # Get the previous recording ID if dependency is satisfied
             prev_id = None
-            if task.depends_on_filename and self._is_dependency_satisfied(task.action_name, task.depends_on_filename):
-                recordings = self.sequencer.sequences[task.action_name][-1]['recordings']
-                for rec in recordings:
-                    if rec['filename'] == task.depends_on_filename:
-                        prev_id = rec['id']
-                        break
+            if task.dependency and self._is_dependency_satisfied(task):
+                id_in_seq, sequence = self.sequencer.get_id_sequence(task.action_name, task.dependency)
+                if id_in_seq is not None and sequence is not None:
+                    prev_id = sequence[id_in_seq]['id']
 
             # Mark as uploading
             self.sequencer.mark_as_state(task.action_name, task.filename, RecState.UPLOADING)
@@ -156,38 +167,35 @@ class ClipSaver:
                 prev_id
             )
 
-            logger.info(f"Successfully uploaded clip '{task.filename}' to database.")
+            with self.upload_lock:
+                if task in self.upload_queue:
+                    self.upload_queue.remove(task)
 
         except Exception as e:
             logger.error(f"Failed to upload clip '{task.filename}': {e}", exc_info=True)
-            # Mark as failed
-            self.sequencer.mark_as_state(task.action_name, task.filename, RecState.FAILED)
 
-    def _cleanup_stuck_tasks(self):
-        """Periodically clean up tasks that have been stuck too long"""
+            task.dependency = task.stashed_dependency
+            task.stashed_dependency = None
+            task.retries -= 1
+
+            if task.retries <= 0:
+                with self.upload_lock:
+                    if task in self.upload_queue:
+                        self.upload_queue.remove(task)
+                
+                with self.davy_jones_lock:
+                    self.davy_jones_locker.append(task)
+
+            task.next_try_at = time.time() + UPLOAD_WAIT
+            self.sequencer.mark_as_state(task.action_name, task.filename, RecState.AWAIT_UPLOAD)
+
+    def _cleanup_finished(self):
+        """Periodically clean up sequences"""
         # Run cleanup every ~10 seconds
         if int(time.time()) % 10 != 0:
             return
-
-        stuck_threshold = time.time() - 300.0  # 5 minutes
-
-        with self.upload_lock:
-            # Remove tasks that have been stuck for too long
-            original_count = len(self.upload_queue)
-            self.upload_queue = deque(
-                task for task in self.upload_queue
-                if task.created_at > stuck_threshold
-            )
-
-            removed_count = original_count - len(self.upload_queue)
-            if removed_count > 0:
-                logger.warning(f"Cleaned up {removed_count} stuck upload tasks")
-
-        # Also check for stuck recordings in the sequencer and mark them as failed
-        stuck_recordings = self.sequencer.get_stuck_recordings(max_age_seconds=300.0)
-        if stuck_recordings:
-            logger.warning(f"Found {len(stuck_recordings)} stuck recordings, marking as failed")
-            self.sequencer.cleanup_stuck_recordings(max_age_seconds=300.0, mark_as_failed=True)
+        
+        self.sequencer.cleanup_finished_sequences()
 
     def save_in_background(
         self,
@@ -214,7 +222,6 @@ class ClipSaver:
         reference_counter: Counter[str],
         filename: str
     ):
-
         frames = self.anonymizer.anonymize_clip(frame_vectors)
         path = self.clip_folder / filename
         try:
@@ -226,11 +233,12 @@ class ClipSaver:
 
         self.sequencer.mark_as_state(action_name, filename, RecState.AWAIT_UPLOAD)
 
-        depends_on_filename = None
+        dependency = None
         try:
-            recordings = self.sequencer.sequences[action_name][-1]['recordings']
-            if len(recordings) >= 2:
-                depends_on_filename = recordings[-2]['filename']
+            _, sequence = self.sequencer.get_id_sequence(action_name, filename)
+            if sequence is not None:
+                if len(sequence) >= 2:
+                    dependency = sequence[-2]['filename']
         except (KeyError, IndexError):
             pass
 
@@ -242,7 +250,7 @@ class ClipSaver:
                 beginning_sec=beginning_sec,
                 end_sec=end_sec,
                 reference_counter=reference_counter,
-                depends_on_filename=depends_on_filename
+                dependency=dependency
             )
 
             with self.upload_lock:
@@ -299,8 +307,8 @@ class ClipSaver:
                 "details": (None, json.dumps(details), "application/json"),
             }
             response = requests.post(Config.DB_URL, data=data, files=files, timeout=15)
-            
             response.raise_for_status()
+
+        res_id = response.text
             
-        
-        self.sequencer.mark_as_state(action_name, filename, RecState.SENT, prev_id)
+        self.sequencer.mark_as_state(action_name, filename, RecState.SENT, res_id)
