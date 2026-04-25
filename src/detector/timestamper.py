@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from collections import Counter
 from typing import TypedDict
 import math
@@ -7,8 +6,19 @@ from src.detector.vectors import FrameVector
 from src.detector.config import Config
 
 
-@dataclass
-class ObjectModel:
+class FullStampModel(TypedDict):
+    events: list[EventStampModel]
+    detections: list[DetectionStampModel]
+
+class EventStampModel(TypedDict):
+    label: str
+    timestamp: TimestampModel
+    
+class DetectionStampModel(TypedDict):
+    objects: list[ObjectModel]
+    timestamp: TimestampModel
+
+class ObjectModel(TypedDict):
     name: str
     count: int
 
@@ -17,22 +27,9 @@ TimestampModel = TypedDict(
     {
         'from': str, 
         'to': str
-     })
+    }
+)
 
-@dataclass
-class DetectionStampModel:
-    objects: list[ObjectModel]
-    timestamp: TimestampModel
-
-@dataclass
-class EventStampModel:
-    label: str
-    timestamp: TimestampModel
-
-@dataclass
-class FullStampModel:
-    events: list[EventStampModel]
-    detections: list[DetectionStampModel]
 
 class Timestamper:
 
@@ -52,10 +49,10 @@ class Timestamper:
         timestamped_det_list = self._make_timestamped_list(detections_per_second)
         timestamped_event_list = self._event_stamp(name, event_span[0], event_span[1])
 
-        timestamped_all = FullStampModel(
-            events=timestamped_event_list,
-            detections=timestamped_det_list
-        )
+        timestamped_all: FullStampModel = {
+            "events": timestamped_event_list,
+            "detections": timestamped_det_list
+        }
         return timestamped_all
 
     def find_most_common(self, recording: list[FrameVector], reference_detections: list[str]) -> list[dict[str, int]]:
@@ -106,12 +103,13 @@ class Timestamper:
             curr_det_vector = detections_per_second[second]
             if curr_det_vector != prev_det_vector:
                 detection = self._detection_stamp(prev_det_vector, time_from, second)
-                detections.append(detection)
+                if detection:
+                    detections.append(detection)
                 time_from = second
                 prev_det_vector = curr_det_vector
 
         detection = self._detection_stamp(prev_det_vector, time_from, len(detections_per_second))
-        if detection: # we ignore empty
+        if detection: 
             detections.append(detection)
 
         return detections
@@ -120,31 +118,31 @@ class Timestamper:
     def _detection_stamp(det_vector: dict[str, int], time_from: int, time_to: int) -> DetectionStampModel | None:
         objects: list[ObjectModel] = []
         for detection, count in det_vector.items():
-            if count > 0: # db will not accept a zero count
-                if detection == "person": # in db it reads human not person
+            if count > 0: 
+                if detection == "person": 
                     detection = "human"
-                objects.append(ObjectModel(
-                    name=detection,
-                    count= count
-                ))
+                objects.append({
+                    "name": detection,
+                    "count": count
+                })
         if objects:
-            return DetectionStampModel(
-                objects=objects,
-                timestamp={
+            return {
+                "objects": objects,
+                "timestamp": {
                     "from": f"PT{time_from}S",
                     "to": f"PT{time_to}S"
                 }
-            )
+            }
         else:
-            return None # thus we return None if no count is > 0
+            return None 
 
     @staticmethod
     def _event_stamp(name: str, time_from: int, time_to: int) -> list[EventStampModel]:
-        return [EventStampModel(
-            label=name,
-            timestamp={
+        return [{
+            "label": name,
+            "timestamp": {
                 "from": f"PT{time_from}S",
                 "to": f"PT{time_to}S"
             }
-        )]
+        }]
     

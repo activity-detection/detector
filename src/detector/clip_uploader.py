@@ -1,5 +1,5 @@
 from collections import deque
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import threading
@@ -197,7 +197,6 @@ class ClipUploader:
             details: FullStampModel,
             prev_id: str | None = None,
     ):
-        details_dict = asdict(details)
 
         filename = path.name
 
@@ -216,7 +215,7 @@ class ClipUploader:
         with open(path, "rb") as video_file:
             files: dict[str, Any] = {
                 "file": (filename, video_file, "video/mp4"),
-                "details": (None, json.dumps(details_dict), "application/json"),
+                "details": (None, json.dumps(details), "application/json"),
             }
             response = requests.post(Config.DB_URL, data=data, files=files, timeout=15)
             response.raise_for_status()
