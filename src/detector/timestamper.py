@@ -36,28 +36,37 @@ class FullStampModel:
 
 class Timestamper:
 
-    def __init__(self, reference_detections: list[str]):
-        self.reference_detections = reference_detections
+    def __init__(self):
+        pass
 
-    def timestamp(self, recording: list[FrameVector], name: str, event_time: tuple[int, int]) -> FullStampModel:
-        detections_per_second = self.find_most_common(recording)
+    def timestamp(
+        self,
+        recording: list[FrameVector],
+        name: str,
+        event_span: tuple[int, int],
+        reference_detections: list[str]
+    ) -> FullStampModel:
+        
+        detections_per_second = self.find_most_common(recording, reference_detections)
+
         timestamped_det_list = self._make_timestamped_list(detections_per_second)
-        timestamped_event_list = self._event_stamp(name, event_time[0], event_time[1])
+        timestamped_event_list = self._event_stamp(name, event_span[0], event_span[1])
+
         timestamped_all = FullStampModel(
             events=timestamped_event_list,
             detections=timestamped_det_list
         )
         return timestamped_all
 
-    def find_most_common(self, recording: list[FrameVector]) -> list[dict[str, int]]:
+    def find_most_common(self, recording: list[FrameVector], reference_detections: list[str]) -> list[dict[str, int]]:
         duration = math.ceil(len(recording) / Config.FRAME_RATE)
-        detections_per_second = self._init_seconds(duration)
+        detections_per_second = self._init_seconds(duration, reference_detections)
 
         for index, frame_vector in enumerate(recording):
             curr_vector = frame_vector.vector
             curr_second = int(index / Config.FRAME_RATE)
 
-            for detection in self.reference_detections:
+            for detection in reference_detections:
                 count = curr_vector.counter[detection]
                 counter = detections_per_second[curr_second][detection]
                 counter[count] += 1
@@ -79,11 +88,11 @@ class Timestamper:
 
         return det_per_second_max
 
-    def _init_seconds(self, duration: int) -> list[dict[str, Counter[int]]]:
+    def _init_seconds(self, duration: int, reference_detections: list[str]) -> list[dict[str, Counter[int]]]:
         detections_per_second: list[dict[str, Counter[int]]] = []
         for _ in range(duration):
             detections_second: dict[str, Counter[int]] = {}
-            for detection in self.reference_detections:
+            for detection in reference_detections:
                 detections_second[detection] = Counter()
             detections_per_second.append(detections_second)
 
