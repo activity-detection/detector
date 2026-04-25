@@ -2,6 +2,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from enum import Enum, auto
 import threading
 import requests
 import json
@@ -9,7 +10,6 @@ import time
 import os
 
 from src.detector.timestamper import FullStampModel
-from src.detector.sequencer import Sequencer, RecState
 from src.detector.config import Config
 from src.detector import logger
 
@@ -18,24 +18,33 @@ UPLOAD_LOOP_PAUSE = 0.5
 UPLOAD_WAIT = 1.0
 
 
+class RecState(Enum):
+    AWAIT_UPLOAD = auto()
+    UPLOADING = auto()
+    SENT = auto()
+    FAILED = auto()
+    STASHED = auto()
+
+
 @dataclass
 class UploadTask:
     """Represents a clip upload task with dependencies"""
-    action_name: str
     path: Path
     details: FullStampModel
+    state: RecState
+    id: str | None = None
     created_at: float | None = None
     retries: int = 5
     next_try_at: float | None = None
-    dependency: str | None = None  # Previous recording filename this depends on
-    stashed_dependency: str | None = None # Stashed for possible sequence continuity split
+    dependency: UploadTask | None = None  # Previous recording filename this depends on
+    stashed_dependency: UploadTask | None = None # Stashed for possible sequence continuity split
 
     def __post_init__(self):
         self.created_at = time.time()
 
 
 class ClipUploader:
-    def __init__(self, sequncer: Sequencer) -> None:
+    def __init__(self) -> None:
         self.clip_folder = Path(Config.CLIP_FOLDER or "clips")
         self.upload_queue: deque[UploadTask] = deque()
         self.upload_lock = threading.Lock()
@@ -43,7 +52,6 @@ class ClipUploader:
         self.davy_jones_lock = threading.Lock()
         self.worker_thread = None
         self.stop_worker = False
-        self.sequencer = sequncer
 
         self._start_upload_worker()
 
@@ -88,9 +96,6 @@ class ClipUploader:
 
     def _is_task_ready(self, task: UploadTask) -> bool:
         """Check if a task is ready to upload"""
-        # Is there any dependency
-        if task.dependency is None:
-            return True  # No dependency
         
         if task.next_try_at is not None:
             if time.time() < task.next_try_at:
@@ -102,23 +107,18 @@ class ClipUploader:
 
         return False
 
-    # TODO sprawdzić warunki dla None
     def _is_dependency_satisfied(self, task: UploadTask) -> bool:
         """Check if the dependency recording has been uploaded and has an ID
             Also stash the dependency if needed"""
-        action_name = task.action_name
         dependency = task.dependency
 
         if dependency is not None:
-            idx_in_seq, sequence = self.sequencer.get_id_sequence(action_name, dependency)
-
-            if sequence is not None and idx_in_seq is not None:
-                recording = sequence[idx_in_seq]
-                if recording['state'] == RecState.STASHED:
-                    task.stashed_dependency = task.dependency
+            if dependency.state == RecState.STASHED:
+                    task.stashed_dependency = dependency
                     task.dependency = None
                     return True
-                return recording['state'] == RecState.SENT and recording['id'] is not None
+            elif dependency.state == RecState.SENT and dependency.id is not None:
+                return True
         return True
 
     def _process_upload_task(self, task: UploadTask):
@@ -126,23 +126,17 @@ class ClipUploader:
         try:
             # Get the previous recording ID if dependency is satisfied
             prev_id = None
-            if task.dependency and self._is_dependency_satisfied(task):
-                id_in_seq, sequence = self.sequencer.get_id_sequence(task.action_name, task.dependency)
-                if id_in_seq is not None and sequence is not None:
-                    prev_id = sequence[id_in_seq]['id']
+            if task.dependency is not None and self._is_dependency_satisfied(task):
+                prev_id = task.dependency.id
 
             # Mark as uploading
-            self.sequencer.mark_as_state(task.action_name, task.path.name, RecState.UPLOADING)
-
-            # Create clip path
-            path = task.path
+            task.state = RecState.UPLOADING
 
             # Upload the clip
             self._upload_clip(
-                path=path,
-                action_name=task.action_name,
-                prev_id=prev_id,
-                details=task.details
+                task=task,
+                details=task.details,
+                prev_id=prev_id
             )
 
             with self.upload_lock:
@@ -165,39 +159,38 @@ class ClipUploader:
                     self.davy_jones_locker.append(task)
 
             task.next_try_at = time.time() + UPLOAD_WAIT
-            self.sequencer.mark_as_state(task.action_name, task.path.name, RecState.AWAIT_UPLOAD)
-
-    def _cleanup_finished(self):
-        """Periodically clean up sequences"""
-        # Run cleanup every ~10 seconds
-        if int(time.time()) % 10 != 0:
-            return
-        
-        self.sequencer.cleanup_finished_sequences()
-
+            task.state = RecState.AWAIT_UPLOAD
+    
     def start_upload(
             self,
             path: Path,
-            action_name: str,
-            details: FullStampModel 
+            details: FullStampModel,
+            dependency_filename: str | None,
     ) -> None:
+        dependency = None
+        if dependency_filename is not None:
+            with self.upload_lock:
+                for task in self.upload_queue:
+                    if task.path.name == dependency_filename:
+                        dependency = task
+                        break
         
         task = UploadTask(
-            action_name=action_name,
             path=path,
-            details=details
+            details=details,
+            state=RecState.AWAIT_UPLOAD,
+            dependency=dependency
         )
         with self.upload_lock:
             self.upload_queue.append(task)
 
     def _upload_clip(
             self,
-            path: Path,
-            action_name: str,
+            task: UploadTask,
             details: FullStampModel,
             prev_id: str | None = None,
-    ):
-
+    ) -> None:
+        path = task.path
         filename = path.name
 
         data = {
@@ -221,5 +214,6 @@ class ClipUploader:
             response.raise_for_status()
 
         res_id = response.text
-            
-        self.sequencer.mark_as_state(action_name, filename, RecState.SENT, res_id)
+        
+        task.state = RecState.SENT
+        task.id = res_id
