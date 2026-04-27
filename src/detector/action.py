@@ -1,158 +1,92 @@
-from collections import deque, Counter
-import csv
-import cv2
-import threading
-from datetime import datetime
-from pathlib import Path
-from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
-import os
-from .anonymizer import Anonymizer
+from collections import deque
+from dataclasses import dataclass
 
-MIN_TRIGGER_COUNT = 10
+from src.detector.vectors import ActionVector
+from src.detector.enums import State, Command
 
-class ActionVector:
-    pose_results = None
-    base_yolo_result = None
 
-    def __init__(self, data=None):
-        self.counter = Counter()
-        if data is not None:
-            self.counter.update(data)
+@dataclass
+class ActionConfig:
+    max_inactive_frames: int
+    max_duration_frames: int
+    check_count: int
+    start_conf: float
+    end_conf: float
 
-    def update(self, data):
-        self.counter.update(data)
-
-    def __add__(self, other: 'ActionVector') -> 'ActionVector':
-        """adds values from two vectors,
-        takes results from first vector if present otherwise from second"""
-        if not isinstance(other, ActionVector):
-            return NotImplemented
-        
-        new_vector = ActionVector()
-        new_vector.update(self.counter)
-        new_vector.update(other.counter)
-        
-        pose_results = self.pose_results if self.pose_results is not None else other.pose_results
-        new_vector.pose_results = pose_results
-        base_yolo_result = self.base_yolo_result if self.base_yolo_result is not None else other.base_yolo_result
-        new_vector.base_yolo_result = base_yolo_result
-        return new_vector
-
-    def __ge__(self, other: 'ActionVector') -> bool: # greater or equals
-        return all(
-            self.counter[f] >= other.counter[f]
-            for f in other.counter
-        )
-    
-
-    def __str__(self) -> str:
-        active_counts = [
-            f"{f}: {self.counter[f]}"
-            for f in self.counter
-            if self.counter[f] > 0
-        ]
-        
-        if not active_counts:
-            return "ActionVector(empty)"
-        
-        return f"ActionVector({', '.join(active_counts)})"
 
 class ActionClass:
-    def __init__(self, name: str, required_vector: ActionVector, pre_buffer_seconds=2.0, cooldown_seconds=2.0):
+    
+    def __init__(self, name: str, action_vector: ActionVector, config: ActionConfig):
         self.name = name
-        self.required_vector = required_vector
-        buffer_len = int(pre_buffer_seconds * Config.FRAME_RATE)
-        self.pre_buffer = deque(maxlen=buffer_len)
-        self.post_buffer = []
+        self.action_vector = action_vector
         
-        self.is_recording = False
-        self.inactive_frames = 0
-        self.trigger_count = 0
-        
-        self.max_inactive_frames = int(cooldown_seconds * Config.FRAME_RATE)
+        self.trigger_history: deque[bool] = deque(maxlen=config.check_count)
+        self.state = State.IDLE
+        self.idling = 0
+        self.awaiting = 0 # TODO figure out a cap
+        self.frame_count = 0
+        self.triggered = False
+        self.config = config
 
-    def next_frame(self, frame, current_vector: ActionVector):
-        trigger_active = current_vector >= self.required_vector
-        frame_vector = {'frame' : frame, 'vector' : current_vector}
-        if trigger_active:
-            self.trigger_count += 1
+        self.idling_final = 0
 
-        if self.is_recording:
-            self.post_buffer.append(frame_vector)
-            
-            if trigger_active:
-                self.inactive_frames = 0
+    def check(self, reference_vector: ActionVector) -> Command:
+        ge = reference_vector >= self.action_vector
+        self.trigger_history.append(ge)
+        if len(self.trigger_history) == self.config.check_count:
+            ge_count = sum(self.trigger_history)
+            percentage = round(ge_count / self.config.check_count, 2) * 100
+            if percentage >= self.config.start_conf:
+                self.triggered = True
             else:
-                self.inactive_frames += 1
+                self.triggered = False
+
+            if self.state in (State.ACTIVE, State.PASSIVE):
+                if self.frame_count > self.config.max_duration_frames:
+                    return self.end()
+
+                if self.state is State.ACTIVE:
+                    self.frame_count += 1
+
+                    if self.triggered:
+                        return Command.CONTINUE
+                    else:
+                        self.idling += 1
+                        self.state = State.PASSIVE
+                        return Command.CONTINUE
+                    
+                if self.state is State.PASSIVE:
+                    if self.idling > self.config.max_inactive_frames:
+                        return self.end()
+                    elif self.triggered:
+                        self.frame_count += 1
+                        self.idling = 0
+                        return Command.CONTINUE
+                    else:
+                        self.frame_count += 1
+                        self.idling += 1
+                        return Command.CONTINUE
                 
-            if self.inactive_frames >= self.max_inactive_frames:
-                self._stop_recording()
-        
-        else:
-            self.pre_buffer.append(frame_vector)
-            if trigger_active:
-                self._start_recording()
-
-    def _start_recording(self):
-        self.is_recording = True
-        self.inactive_frames = 0
-        self.post_buffer = []
-
-    def _stop_recording(self):
-        self.is_recording = False
-        if self.trigger_count >= MIN_TRIGGER_COUNT:
-            full_clip = list(self.pre_buffer) + self.post_buffer
+            elif self.state is State.IDLE:
+                if self.triggered:
+                    self.state = State.ACTIVE
+                    self.frame_count += 1
+                    return Command.BEGIN
+                self.awaiting += 1
+                return Command.AWAIT
             
-            save_thread = threading.Thread(
-                target=self._save_clip_task, 
-                args=(full_clip, self.name)
-            )
-            save_thread.start()
-        self.trigger_count = 0
-        self.pre_buffer.clear()
-        self.post_buffer = []
+        return Command.AWAIT
 
-    @staticmethod
-    def _save_clip_task(frame_vectors, action_name): # TODO wysyłanie do backend Bartka
-        anonymizer = Anonymizer()
-        frames = anonymizer.anonymize_clip(frame_vectors)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{action_name}_{timestamp}.avi"
-        path = os.path.join(Config.CLIP_FOLDER, filename)
-        
-        height, width, _ = frames[0].shape
-        fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        
-        out = cv2.VideoWriter(path, fourcc, Config.FRAME_RATE, (width, height), True)
-        try:
-            for frame in frames:
-                out.write(frame)
-        finally:
-            out.release()
+    def end(self) -> Command:
+        self.state = State.IDLE
+        self.frame_count = 0
+        self.idling_final = self.idling
+        self.idling = 0
+        self.awaiting_final = self.awaiting + 1
+        self.awaiting = 1
+        return Command.END
 
     def __str__(self) -> str:
-        status = "RECORDING" if self.is_recording else "IDLE"
-        return f"ActionClass(name='{self.name}', status={status}, cooldown={self.inactive_frames}/{self.max_inactive_frames})"
-
-def load_action_classes(path: str) -> list[ActionClass]: # loads action classes from csv file
-    action_classes = []
-    csv_path = Path(path)
+        status = "ACTIVE" if self.state is State.ACTIVE else "IDLE"
+        return f"ActionClass(name='{self.name}', status={status}, cooldown={self.idling}/{self.config.max_inactive_frames})"
     
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
-
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            name = row.pop("action_name", "Unknown")
-            pre_seconds = float(row.pop('pre_seconds', '2.0')) # seconds before action
-            post_seconds = float(row.pop('post_seconds', '2.0'))
-            vector_kwargs = {key : int(value) for key, value in row.items()
-                             if key in BASE_YOLO_MAPPING.values()
-                             or key in LSTM_MAPPING.values()}
-            
-            vector = ActionVector(vector_kwargs)
-            action_classes.append(ActionClass(name=name, pre_buffer_seconds=pre_seconds, cooldown_seconds=post_seconds, required_vector=vector))
-            
-    return action_classes

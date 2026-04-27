@@ -1,9 +1,11 @@
+import numpy as np
 import cv2
 import glob
 import os
 from abc import ABC, abstractmethod
 
 class VideoSource(ABC):
+
     @abstractmethod
     def get_frame(self):
         pass
@@ -28,7 +30,7 @@ class RTSPSource(VideoSource):
     def __init__(self, url):
         self.cap = cv2.VideoCapture(url)
     
-    def get_frame(self):
+    def get_frame(self) -> tuple[bool, np.ndarray]:
         return self.cap.read()
 
     def release(self):
@@ -38,7 +40,7 @@ class VideoFileSource(VideoSource):
     def __init__(self, file_path):
         self.cap = cv2.VideoCapture(file_path)
 
-    def get_frame(self):
+    def get_frame(self) -> tuple[bool, np.ndarray]:
         return self.cap.read()
 
     def release(self):
@@ -48,7 +50,7 @@ class USBCameraSource(VideoSource):
     def __init__(self, device_index):
         self.cap = cv2.VideoCapture(int(device_index))
 
-    def get_frame(self):
+    def get_frame(self) -> tuple[bool, np.ndarray]:
         return self.cap.read()
 
     def release(self):
@@ -65,7 +67,7 @@ class ImageFolderSource(VideoSource):
         self.images.sort()
         self.current_idx = 0
 
-    def get_frame(self):
+    def get_frame(self) -> tuple[bool, np.ndarray]:
         if self.current_idx >= len(self.images):
             return False, None
         
@@ -81,7 +83,7 @@ class SingleImageSource(VideoSource):
         self.frame = cv2.imread(file_path)
         self.processed = False
 
-    def get_frame(self):
+    def get_frame(self) -> tuple[bool, np.ndarray]:
         if self.processed:
             return False, None
         self.processed = True

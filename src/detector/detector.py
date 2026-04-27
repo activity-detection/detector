@@ -1,117 +1,121 @@
-import torch
-import numpy as np
-from collections import defaultdict, deque
-from ultralytics import YOLO
+# pyright: reportUnknownMemberType=false
 
-from .lstm import MultiClassLSTM
-from .config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
-from .action import ActionVector
+import numpy as np
+import torch
+import sys
+from collections import defaultdict, deque
+from ultralytics.engine.results import Results
+from ultralytics import YOLO
+from typing import cast
+
+from src.detector.config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
+from src.detector.action import ActionVector
+from src.detector.lstm import MultiClassLSTM
+from src.detector import logger
+
 
 class Detector:
     def __init__(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        self.track_history = defaultdict(lambda: deque(maxlen=60)) # maxlen eq lstm input
+        self.track_history: defaultdict[int, deque[np.ndarray]] = defaultdict(lambda: deque(maxlen=60)) # maxlen eq lstm input
 
         self.pose_model = YOLO(Config.POSE_MODEL_PATH)
-        self.yolo_base = YOLO(Config.BASE_MODEL_PATH)
+        self.base_model = YOLO(Config.BASE_MODEL_PATH)
 
         self.fps = Config.FRAME_RATE
         
-        self._load_lstm_model()
-
-    def _load_lstm_model(self):  # loads lstm TODO borys przesuń to do lstm.py
-        self.detection_model = MultiClassLSTM()
-
-        lstm_path = Config.LSTM_MODEL_PATH
-        
+        self.action_model = MultiClassLSTM()
         try:
-            checkpoint = torch.load(lstm_path, map_location=self.device)
-            self.detection_model.load_state_dict(checkpoint)
-            self.detection_model.to(self.device)
-            self.detection_model.eval()
-            print(f"[INFO] LSTM Model correctly loaded from {lstm_path}")
-        except FileNotFoundError:
-            print(f"[ERROR] File not found: {lstm_path}")
-            self.detection_model = None
+            self.action_model.load_model()
+        except FileNotFoundError as e:
+            logger.critical(f"Cannot start system. LSTM model file is missing: {Config.LSTM_MODEL_PATH}")
+            sys.exit(1)
+        except RuntimeError as e:
+            logger.critical(f"LSTM model file exists, but architecture mismatch: {e}")
+            sys.exit(1)
         except Exception as e:
-            print(f"[ERROR] Error during loading LSTM model: {e}")
-            self.detection_model = None
-
-    def predict_action(self, sequence_tensor): # predicts action using lstm, TODO to też przesuń
-        if self.detection_model is None:
-            return "LSTM is not loaded!"
-
-        sequence_tensor = sequence_tensor.to(self.device)
-
-        with torch.no_grad():
-            outputs = self.detection_model(sequence_tensor)
-            
-            _, predicted_idx = torch.max(outputs, 1)
-            class_id = predicted_idx.item()
-            
-        return class_id
+            logger.critical(f"Failed to load LSTM model due to an unexpected error: {e}", exc_info=True)
+            sys.exit(1)
     
-    def process_batch(self, frames):
-        vectors_base = self.detect_base_yolo(frames)
-        vectors_pose = self.detect_yolo_pose(frames)
+    def process_batch(self, frames: list[np.ndarray]) -> list[ActionVector]:
+        vectors_base = self.detect_objects(frames)
+        vectors_pose = self.detect_people_actions(frames)
 
         vector_list = [x + y for x, y in zip(vectors_base, vectors_pose)]
 
         return vector_list
-
     
-    def detect_base_yolo(self, frames): # detects and count objects on frame using yolo
-        results = self.yolo_base.track(frames, verbose=False, half=True)
-        vector_list = []
+    def detect_objects(self, frames: list[np.ndarray]) -> list[ActionVector]: # detects and count objects on frame using yolo
+        results = self.base_model.track(frames, verbose=False, half=True)
+        vector_list: list[ActionVector] = []
         for result in results:
-            classes = []
-            for box in result.boxes:
-                class_id = int(box.cls[0])
-                if class_id in BASE_YOLO_MAPPING:
-                    field_name = BASE_YOLO_MAPPING[class_id]
-                    classes.append(field_name)
+            classes: list[str] = []
+            if result.boxes is not None:
+                for box in result.boxes:
+                    class_id = int(box.cls[0])
+                    if class_id in BASE_YOLO_MAPPING:
+                        field_name = BASE_YOLO_MAPPING[class_id]
+                        classes.append(field_name)
             vector = ActionVector(classes)
             vector.base_yolo_result = result
             vector_list.append(vector)
                 
         return vector_list
     
-    def detect_yolo_pose(self, frames): # detects people on frame using yolo pose and detects actions using lstm
+    def detect_people_actions(self, frames: list[np.ndarray]) -> list[ActionVector]: # detects people on frame using yolo pose and detects actions using lstm
         results = self.pose_model.track(frames, persist=True, verbose=False, half=True)
-        vector_list = []
+        vector_list: list[ActionVector] = []
         for result in results:
             vector = ActionVector()
             vector.pose_results = result
             if result.boxes is not None and result.boxes.id is not None:
-                track_ids = result.boxes.id.int().cpu().tolist()
-                person = {'person' : len(track_ids)}
-                vector.update(person)
+                track_ids, keypoints = self._extract_tracking_data(result)
+                person_count = len(track_ids)
+                vector.update({'person': person_count})
 
-                keypoints = result.keypoints.xy.cpu().numpy()
-                lstm_list = []
+                lstm_list: list[str] = []
                 for person_idx, track_id in enumerate(track_ids):
                     kps = keypoints[person_idx]
-        
                     flat_kps = self.normalize(kps)
-
                     self.track_history[track_id].append(flat_kps)
-
-                    action_id = 0
-
-                    if len(self.track_history[track_id]) == 60: # TODO Borys popraw to bo mi się nie podoba. Daj to do innej funkcji czy coś
-
-                        sequence = np.array(self.track_history[track_id])
-                        input_tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device) 
-
-                        action_id = self.predict_action(input_tensor)
-                        lstm_list.append(LSTM_MAPPING[action_id])
+                    
+                    if len(self.track_history[track_id]) == 60:
+                        action_name = self._predict_action(track_id)
+                        lstm_list.append(action_name)
+                        
                 vector.update(lstm_list)
             vector_list.append(vector)
         return vector_list
+
+    def _extract_tracking_data(self, result: Results) -> tuple[list[int], np.ndarray]:
+        track_ids: list[int] = []
+        keypoints: np.ndarray = np.array([]) 
+
+        if result.boxes is not None and result.boxes.id is not None:
+            if isinstance(result.boxes.id, torch.Tensor):
+                track_ids = cast(list[int], result.boxes.id.int().cpu().tolist())
+            else:
+                track_ids = result.boxes.id.astype(int).tolist()
+
+        if result.keypoints is not None and hasattr(result.keypoints, 'xy'):
+            if isinstance(result.keypoints.xy, torch.Tensor):
+                keypoints = result.keypoints.xy.cpu().numpy()
+            else:
+                keypoints = result.keypoints.xy
+
+        return track_ids, keypoints
+    
+    def _predict_action(self, track_id: int) -> str:
+        sequence = np.array(self.track_history[track_id])
+        input_tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device) 
+
+        action_id = int(self.action_model.predict(input_tensor))
+
+        return LSTM_MAPPING[action_id]
     
     @staticmethod
-    def normalize(kps): # keypoints normalization relative to torso
+    def normalize(kps: np.ndarray) -> np.ndarray: # keypoints normalization relative to torso
         l_sh, r_sh = kps[5], kps[6]
         l_hip, r_hip = kps[11], kps[12]
 
