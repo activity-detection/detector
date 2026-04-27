@@ -43,7 +43,6 @@ class Timestamper:
         event_span: tuple[int, int],
         reference_detections: list[str]
     ) -> FullStampModel:
-        
         detections_per_second = self.find_most_common(recording, reference_detections)
 
         timestamped_det_list = self._make_timestamped_list(detections_per_second)
@@ -60,7 +59,7 @@ class Timestamper:
         detections_per_second = self._init_seconds(duration, reference_detections)
 
         for index, frame_vector in enumerate(recording):
-            curr_vector = frame_vector.vector
+            curr_vector = frame_vector["vector"]
             curr_second = int(index / Config.FRAME_RATE)
 
             for detection in reference_detections:

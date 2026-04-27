@@ -48,6 +48,7 @@ class ClipUploader:
         self.clip_folder = Path(Config.CLIP_FOLDER or "clips")
         self.upload_queue: deque[UploadTask] = deque()
         self.upload_lock = threading.Lock()
+        # TODO dodać obrabianie odłożonych nagrań
         self.davy_jones_locker: deque[UploadTask] = deque()
         self.davy_jones_lock = threading.Lock()
         self.worker_thread = None

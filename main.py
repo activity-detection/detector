@@ -44,7 +44,6 @@ def main():
                     # print(vector)
                 batch.clear()
                 fps.end()
-                
                 fps.begin()
 
     except KeyboardInterrupt:

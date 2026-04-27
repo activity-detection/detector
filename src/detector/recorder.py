@@ -90,9 +90,9 @@ class Recorder:
                     self._remove(index)
 
         if Command.CONTINUE in command_list or Command.BEGIN in command_list:
-            self.recording.append(FrameVector(frame, reference_vector))
+            self.recording.append(FrameVector(frame=frame, vector=reference_vector))
         else:
-            self.buffer.append(FrameVector(frame, reference_vector))
+            self.buffer.append(FrameVector(frame=frame, vector=reference_vector))
 
     def _add(self, action_class: ActionClass):
         if not self.recording:
