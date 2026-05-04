@@ -3,10 +3,10 @@
 .env.*
 
 # Model weights and engine files
-models/*.pth
-models/*.pt
-models/*.engine
-models/*.onnx
+*.pth
+*.pt
+*.engine
+*.onnx
 
 # Python
 __pycache__/
