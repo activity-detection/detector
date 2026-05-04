@@ -39,3 +39,6 @@ logs/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Videos
+*.mp4
