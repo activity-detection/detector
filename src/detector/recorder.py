@@ -8,7 +8,7 @@ import csv
 from src.detector.clip_saver import ClipSaver
 from src.detector.sequencer import Sequencer
 from src.detector.vectors import FrameVector, ActionVector
-from src.detector.config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING
+from src.detector.config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING, SCENE_FLAGS
 from src.detector.action import ActionClass, ActionConfig
 from src.detector.enums import State, Command
 from src.detector import logger
@@ -65,6 +65,7 @@ class Recorder:
                 vector_kwargs = {key : int(value) for key, value in row.items()
                                 if key in BASE_YOLO_MAPPING.values()
                                 or key in LSTM_MAPPING.values()
+                                or key in SCENE_FLAGS
                                 or key == "person"} # osoby nie ma w configu
                 
                 vector = ActionVector(vector_kwargs)

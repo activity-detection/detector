@@ -1,0 +1,5 @@
+{
+  "person_threshold": 20,
+  "sustain_frames": 15,
+  "comment": "Mall Dataset kalibracja. 20 osób = ścisk, 15 klatek @ TARGET_FPS=25 = 0.6s sustain. Re-kalibruj per kamera (różny field of view)."
+}

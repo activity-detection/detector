@@ -1,0 +1,11 @@
+action_name,person,knife,dog,jumping_jacks,squat,fall,running,fight,crowd,lying_still
+upadek,1,0,0,0,0,1,0,0,0,0
+upadek_z_lezeniem,1,0,0,0,0,1,0,0,0,1
+osoba_lezaca,1,0,0,0,0,0,0,0,0,1
+bieganie,1,0,0,0,0,0,1,0,0,0
+bojka,2,0,0,0,0,0,0,1,0,0
+tlok,1,0,0,0,0,0,0,0,1,0
+tlok_z_bojka,2,0,0,0,0,0,0,1,1,0
+osoba_z_nozem,1,1,0,0,0,0,0,0,0,0
+przysiad,1,0,0,0,1,0,0,0,0,0
+pajacyki,1,0,0,1,0,0,0,0,0,0

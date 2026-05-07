@@ -1,0 +1,9 @@
+{
+  "aspect_threshold": 1.5,
+  "sustain_frames": 30,
+  "tpr": 0.92,
+  "fpr": 0.063,
+  "f1": 0.685,
+  "n_positive": 3235,
+  "n_negative": 39435
+}

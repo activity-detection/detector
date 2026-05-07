@@ -3,7 +3,8 @@ import numpy as np
 from src.detector.config import Config
 from src.detector.sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
 from src.detector.detector import Detector
-from src.tools.fps_estimator import FPS_estimator 
+from src.detector.fps_normalizer import FrameRateNormalizer
+from src.tools.fps_estimator import FPS_estimator
 from src.detector.recorder import Recorder
 
 from src.detector.utils.mylogger import setup_logging
@@ -22,7 +23,11 @@ def main():
     setup_logging()
 
     source = get_source()
-    Config.FRAME_RATE = source.get_frame_rate()
+    source_fps = source.get_frame_rate() or Config.TARGET_FPS
+    Config.FRAME_RATE = Config.TARGET_FPS  # post-normalization wszystko @ TARGET_FPS
+    print(f"Source FPS: {source_fps:.2f} → TARGET_FPS: {Config.TARGET_FPS}")
+
+    fps_norm = FrameRateNormalizer(source_fps=source_fps, target_fps=Config.TARGET_FPS)
     detector = Detector()
     recorder = Recorder(2, 2, 6)
     recorder.load_action_classes(Config.ACTION_VECTORS_PATH)
@@ -36,17 +41,19 @@ def main():
             ret, frame = source.get_frame()
             if not ret:
                 break
-            batch.append(frame)
-            if len(batch) == Config.BATCH_SIZE:
-                vector_list = detector.process_batch(batch)
-                for vector, frame in zip(vector_list, batch):
-                    recorder.check_frame(frame, vector)
-                    print(vector)
-                batch.clear()
-                fps.end()
-                #print(f'FPS: {fps.get_fps():.2f}')
-                
-                fps.begin()
+
+            n_emit = fps_norm.emit_count()
+            fps_norm.advance()
+            for _ in range(n_emit):
+                batch.append(frame)
+                if len(batch) == Config.BATCH_SIZE:
+                    vector_list = detector.process_batch(batch)
+                    for vector, batched_frame in zip(vector_list, batch):
+                        recorder.check_frame(batched_frame, vector)
+                        print(vector)
+                    batch.clear()
+                    fps.end()
+                    fps.begin()
 
     except KeyboardInterrupt:
         print("Stopped by user")
