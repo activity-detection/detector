@@ -19,11 +19,16 @@ BASE_YOLO_MAPPING: dict[int, str] = {
 
 LICENSE_PLATE_ID = 8
 
+WINDOW_SIZE = 30
+TARGET_FPS = 25.0
+
 LSTM_MAPPING: dict[int, str] = {
     -1: 'error',
     0: 'normal',
     1: 'jumping_jacks',
-    2: 'squat'
+    2: 'squats',
+    3: 'falling',
+    4: 'running'
 }
 
 class Settings(BaseSettings):
@@ -35,7 +40,7 @@ class Settings(BaseSettings):
 
     APP_MODE: str = Field(default="VIDEO")
     BASE_DIR: str = Field(default_factory=os.getcwd)
-    FRAME_RATE: float = 25.
+    FRAME_RATE: float = TARGET_FPS
     BATCH_SIZE: int = 8
     DB_URL: str = ""
     SEQUENCE_FRAMES_GAP: int = 15 # TODO może to gdzieś przeniść

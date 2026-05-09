@@ -1,12 +1,21 @@
 import numpy as np
 
-from src.detector.config import Config
-from src.detector.sources import RTSPSource, VideoFileSource, USBCameraSource, ImageFolderSource, SingleImageSource
+from src.detector.config import Config, TARGET_FPS
+from src.detector.sources import (
+    RTSPSource,
+    VideoFileSource,
+    USBCameraSource,
+    ImageFolderSource,
+    SingleImageSource,
+    FPSResampledSource,
+)
 from src.detector.detector import Detector
-from src.tools.fps_estimator import FPS_estimator 
+from src.tools.fps_estimator import FPS_estimator
 from src.detector.recorder import Recorder
 
 from src.detector.utils.mylogger import setup_logging
+
+TEMPORAL_MODES = {'VIDEO', 'USB', 'RTSP'}
 
 def get_source():
     if Config.APP_MODE == 'VIDEO': return VideoFileSource(Config.SOURCE_PATH)
@@ -22,6 +31,8 @@ def main():
     setup_logging()
 
     source = get_source()
+    if Config.APP_MODE in TEMPORAL_MODES:
+        source = FPSResampledSource(source, TARGET_FPS)
     Config.FRAME_RATE = source.get_frame_rate()
     detector = Detector()
     recorder = Recorder(2, 2, 6)

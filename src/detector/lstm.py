@@ -8,11 +8,12 @@ from src.detector import logger
 
 INPUT_DIM = 34
 HIDDEN_DIM = 64
-OUTPUT_DIM = 3
+OUTPUT_DIM = 5
+NUM_LAYERS = 2
 
 
 class MultiClassLSTM(nn.Module):
-    def __init__(self, input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM, output_dim=OUTPUT_DIM, num_layers=3):
+    def __init__(self, input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM, output_dim=OUTPUT_DIM, num_layers=NUM_LAYERS):
         super(MultiClassLSTM, self).__init__()
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, dropout=0.3)
         self.fc = nn.Linear(hidden_dim, output_dim)
