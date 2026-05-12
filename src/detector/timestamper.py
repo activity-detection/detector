@@ -5,19 +5,6 @@ import math
 from src.detector.vectors import FrameVector
 from src.detector.config import Config
 
-
-class FullStampModel(TypedDict):
-    events: list[EventStampModel]
-    detections: list[DetectionStampModel]
-
-class EventStampModel(TypedDict):
-    label: str
-    timestamp: TimestampModel
-    
-class DetectionStampModel(TypedDict):
-    objects: list[ObjectModel]
-    timestamp: TimestampModel
-
 class ObjectModel(TypedDict):
     name: str
     count: int
@@ -30,6 +17,17 @@ TimestampModel = TypedDict(
     }
 )
 
+class EventStampModel(TypedDict):
+    label: str
+    timestamp: TimestampModel
+
+class DetectionStampModel(TypedDict):
+    objects: list[ObjectModel]
+    timestamp: TimestampModel
+
+class FullStampModel(TypedDict):
+    events: list[EventStampModel]
+    detections: list[DetectionStampModel]
 
 class Timestamper:
 
