@@ -18,9 +18,9 @@ class Anonymizer:
         pass
 
     def anonymize_clip(self, frame_vectors: list[FrameVector]):
-        frames = [frame_vector.frame for frame_vector in frame_vectors]
-        pose_results = [frame_vector.vector.pose_results for frame_vector in frame_vectors]
-        yolo_results = [frame_vector.vector.base_yolo_result for frame_vector in frame_vectors]
+        frames = [frame_vector['frame'] for frame_vector in frame_vectors]
+        pose_results = [frame_vector['vector'].pose_results for frame_vector in frame_vectors]
+        yolo_results = [frame_vector['vector'].base_yolo_result for frame_vector in frame_vectors]
         
         # Use local trackers for this clip to avoid race conditions
         tracked_faces = {}
