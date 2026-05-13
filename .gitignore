@@ -3,10 +3,11 @@
 .env.*
 
 # Model weights and engine files
-*.pth
-*.pt
-*.engine
-*.onnx
+**/*.pth
+**/*.pt
+**/*.engine
+**/*.onnx
+**/runs/
 
 # Python
 __pycache__/
@@ -33,12 +34,13 @@ env/
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-logs/
-
 # Jupyter
 .ipynb_checkpoints/
 
 # Videos
-*.mp4
+data/
+output/
+vectors/
+**/*.mp4
+**/*.jpg
+**/*.txt
