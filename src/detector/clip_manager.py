@@ -32,18 +32,18 @@ class ClipManager:
             reference_counter: Counter[str],
             inactive_counts: tuple[int, int]
     ) -> None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{action_name}_{timestamp}.mp4"
-        path = self.clip_folder / filename
-
-        dependency = self._get_dependency(action_name, filename, inactive_counts)
-
-        self.clip_saver.save(clip, path)
-
-        reference_detections = [detection for detection, count in reference_counter.items() if count > 0]
-        details = self.timestamper.timestamp(clip, action_name, (event_span[0], event_span[1]), reference_detections)
-
-        self.clip_uploader.start_upload(path, details, dependency)
+        if Config.SAVE_CLIPS:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{action_name}_{timestamp}.mp4"
+            path = self.clip_folder / filename
+            self.clip_saver.save(clip, path)
+        if Config.UPLOAD_CLIPS:
+            dependency = self._get_dependency(action_name, filename, inactive_counts)
+    
+            reference_detections = [detection for detection, count in reference_counter.items() if count > 0]
+            details = self.timestamper.timestamp(clip, action_name, (event_span[0], event_span[1]), reference_detections)
+    
+            self.clip_uploader.start_upload(path, details, dependency)
 
     def _get_dependency(self, action_name: str, filename: str, counts: tuple[int, int]) -> str | None:
         dependency = None
