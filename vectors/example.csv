@@ -1,0 +1,5 @@
+action_name,pre_seconds,post_seconds,person,bicycle,car,bird,cat,dog,handbag,suitcase,knife,jumping_jacks,squats,falling,running
+1_person_jumping_jacks,2,2,1,0,0,0,0,0,0,0,0,1,0,0,0
+1_person_squats,2,2,1,0,0,0,0,0,0,0,0,0,1,0,0
+1_person_falling,3,3,1,0,0,0,0,0,0,0,0,0,0,1,0
+1_person_running,2,2,1,0,0,0,0,0,0,0,0,0,0,0,1
