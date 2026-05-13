@@ -4,7 +4,9 @@ services:
       context: .
     env_file: ".env"
     volumes:
-      - clips:/clips
+      - type: bind
+        source: ./clips
+        target: /clips
       - type: bind
         source: ./vectors
         target: /app/vectors
@@ -20,7 +22,4 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
-volumes:
-  clips:
 

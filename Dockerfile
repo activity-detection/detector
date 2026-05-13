@@ -26,12 +26,12 @@ RUN adduser \
 COPY uv.lock pyproject.toml .
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync
+    uv sync --frozen --no-dev
 
 # Lepiej nic nie zmieniać przed tym komentarzem bo obraz bedzie się długo tworzył
 ENV YOLO_CONFIG_DIR=/
 ENV BASE_MODEL_PATH=models/yolo26m_main.pt
-ENV POSE_MODEL_PATH=models/yolo26m-pose.pt
+ENV POSE_MODEL_PATH=models/yolo11m-pose.pt
 ENV LSTM_MODEL_PATH=models/lstm_5class_1.pth
 ENV LOG_CONFIG_PATH=logging_config/stdout.json
 
@@ -45,4 +45,4 @@ COPY src/ ./src
 
 # USER appuser
 
-CMD ["uv", "run", "main.py"]
+CMD ["uv", "run", "--no-dev", "main.py"]

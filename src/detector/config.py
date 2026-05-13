@@ -1,10 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, computed_field
-from dotenv import load_dotenv
-
 import os
-
-load_dotenv()
 
 BASE_YOLO_MAPPING: dict[int, str] = {
     0: 'bicycle',

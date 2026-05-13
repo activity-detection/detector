@@ -5,18 +5,13 @@ description = "Activities detector using video sources"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "dotenv>=0.9.9",
-    "fiftyone>=1.13.0",
     "lap>=0.5.13",
     "numpy>=2.4.2",
     "opencv-python-headless>=4.10.0.84",
     "opencv-stubs>=0.1.3",
-    "pydantic>=2.12.5",
-    "pydantic-settings>=2.13.1",
-    "pyyaml>=6.0.3",
-    "roboflow>=1.2.15",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.1",
     "torch>=2.6.0",
-    "torchaudio>=2.6.0",
     "torchvision>=0.21.0",
     "ultralytics>=8.4.12",
 ]
@@ -29,4 +24,10 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-gpu" }
 torchvision = { index = "pytorch-gpu" }
-torchaudio = { index = "pytorch-gpu" }
+
+[dependency-groups]
+dev = [
+    "fiftyone>=1.13.0",
+    "pyyaml>=6.0.3",
+    "roboflow>=1.2.15",
+]
