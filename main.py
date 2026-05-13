@@ -14,6 +14,7 @@ from src.tools.fps_estimator import FPS_estimator
 from src.detector.recorder import Recorder
 
 from src.detector.utils.mylogger import setup_logging
+from src.detector import logger
 
 TEMPORAL_MODES = {'VIDEO', 'USB', 'RTSP'}
 
@@ -26,7 +27,7 @@ def get_source():
     else: raise ValueError(f"Unknown mode: {Config.APP_MODE}")
 
 def main():
-    print(f"MODE: {Config.APP_MODE} | SOURCE: {Config.SOURCE_PATH} | BATCH SIZE: {Config.BATCH_SIZE}")
+    logger.info(f"MODE: {Config.APP_MODE} | SOURCE: {Config.SOURCE_PATH} | BATCH SIZE: {Config.BATCH_SIZE}")
 
     setup_logging()
 
@@ -37,8 +38,9 @@ def main():
     detector = Detector()
     recorder = Recorder(2, 2, 6)
     recorder.load_action_classes(Config.ACTION_VECTORS_PATH)
+    logger.info("Vectors:")
     for ac in recorder.action_classes:
-        print(ac.action_vector)
+        logger.info(ac.action_vector)
     batch: list[np.ndarray] = []
     fps = FPS_estimator()
     fps.begin()
@@ -58,7 +60,7 @@ def main():
                 fps.begin()
 
     except KeyboardInterrupt:
-        print("Stopped by user")
+        logger.warning("Stopped by user")
     finally:
         source.release()
 

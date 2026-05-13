@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     ROBOFLOW_PROJECT: str
     ROBOFLOW_DATASET_VERSION: int
 
+    LOG_CONFIG_PATH: str = Field(default="stdout.json")
+    LOG_DIR: str = Field(default="logs")
+
+    UPLOAD_CLIPS: bool
+    SAVE_CLIPS: bool
 
     @computed_field
     @property
