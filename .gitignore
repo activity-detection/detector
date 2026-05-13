@@ -42,3 +42,5 @@ logs/
 
 # Videos
 *.mp4
+scenes/*
+!scenes/.gitkeep
