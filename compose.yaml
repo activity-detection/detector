@@ -1,0 +1,26 @@
+services:
+  detector:
+    build:
+      context: .
+    env_file: ".env"
+    volumes:
+      - clips:/clips
+      - type: bind
+        source: ./vectors
+        target: /app/vectors
+        read_only: true
+      - type: bind
+        source: ./examples
+        target: /app/examples
+        read_only: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  clips:
+
