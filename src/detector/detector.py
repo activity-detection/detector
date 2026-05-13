@@ -11,6 +11,7 @@ from typing import cast
 from src.detector.config import Config, BASE_YOLO_MAPPING, LSTM_MAPPING, WINDOW_SIZE
 from src.detector.action import ActionVector
 from src.detector.lstm import MultiClassLSTM
+from src.detector.scene import SceneAnalyzer, load_scene
 from src.detector import logger
 
 
@@ -44,10 +45,22 @@ class Detector:
         except Exception as e:
             logger.critical(f"Failed to load LSTM model due to an unexpected error: {e}", exc_info=True)
             sys.exit(1)
-    
+
+        self.scene: SceneAnalyzer | None = None
+        scene_cfg = load_scene(Config.SCENE_CONFIG_PATH)
+        if scene_cfg is not None:
+            self.scene = SceneAnalyzer(scene_cfg, self.fps)
+            logger.info(f"Scene detection enabled: {Config.SCENE_CONFIG_PATH}")
+
     def process_batch(self, frames: list[np.ndarray]) -> list[ActionVector]:
         vectors_base = self.detect_objects(frames)
         vectors_pose = self.detect_people_actions(frames)
+
+        if self.scene is not None:
+            for i, v_pose in enumerate(vectors_pose):
+                if v_pose.pose_results is not None:
+                    v_scene = self.scene.process(v_pose.pose_results)
+                    vectors_pose[i] = v_pose + v_scene
 
         vector_list = [x + y for x, y in zip(vectors_base, vectors_pose)]
 

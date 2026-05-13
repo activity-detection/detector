@@ -1,3 +1,10 @@
+## Scene-based detection (forbidden zone)
+
+```
+uv run python -m src.tools.scene_annotator --source data/test.mp4 --name parking_west
+```
+LMB klika wierzchołki, `ENTER` zamyka wielokąt, `S` zapisuje `scenes/<name>.json`, `Q` wyjście. Wskaż plik w `.env` przez `SCENE_CONFIG_PATH=scenes/parking_west.json` i uruchom `uv run python main.py` — reguła `zone_intrusion` z `vectors/example.csv` zacznie generować klipy gdy ktoś wejdzie w zaznaczony obszar.
+
 ## Using script.py
 
 To use script.py write command below into terminal

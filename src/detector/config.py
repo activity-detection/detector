@@ -31,6 +31,8 @@ LSTM_MAPPING: dict[int, str] = {
     4: 'running'
 }
 
+SCENE_VECTOR_KEYS: set[str] = {"forbidden_zone", "crowd"}
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -50,6 +52,7 @@ class Settings(BaseSettings):
     BASE_MODEL_PATH: str
     POSE_MODEL_PATH: str
     CLIP_FOLDER: str
+    SCENE_CONFIG_PATH: str | None = Field(default=None)
     
     # TODO coś z tym może zrobić
     RAW_LSTM_MODEL_PATH: str = Field(default="", alias="LSTM_MODEL_PATH")
