@@ -212,7 +212,7 @@ class ClipUploader:
                 "file": (filename, video_file, "video/mp4"),
                 "details": (None, json.dumps(details), "application/json"),
             }
-            response = requests.post(Config.DB_URL, data=data, files=files, timeout=15)
+            response = requests.post(Config.BACKEND_UPLOAD_URL, data=data, files=files, timeout=15)
             response.raise_for_status()
 
         res_id = response.text
