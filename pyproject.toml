@@ -26,8 +26,4 @@ torch = { index = "pytorch-gpu" }
 torchvision = { index = "pytorch-gpu" }
 
 [dependency-groups]
-dev = [
-    "fiftyone>=1.13.0",
-    "pyyaml>=6.0.3",
-    "roboflow>=1.2.15",
-]
+dev = []
