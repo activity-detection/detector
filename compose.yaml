@@ -2,17 +2,24 @@ services:
   detector:
     build:
       context: .
+      dockerfile: Dockerfile
     env_file: ".env"
+    environment:
+      - CLIP_FOLDER=/clips
+      - BACKEND_UPLOAD_URL=http://backend:8080/videos/upload
+      - ACTION_VECTORS_PATH=/app/vectors/vectors.csv
+      - UPLOAD_CLIPS=False
+      - SAVE_CLIPS=True
     volumes:
       - type: bind
-        source: ./clips
+        source: clips
         target: /clips
       - type: bind
-        source: ./vectors
+        source: vectors
         target: /app/vectors
         read_only: true
       - type: bind
-        source: ./examples
+        source: examples
         target: /app/examples
         read_only: true
     deploy:
@@ -22,4 +29,3 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
