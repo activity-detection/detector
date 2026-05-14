@@ -32,10 +32,10 @@ class ClipManager:
             reference_counter: Counter[str],
             inactive_counts: tuple[int, int]
     ) -> None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{action_name}_{timestamp}.mp4"
+        path = self.clip_folder / filename
         if Config.SAVE_CLIPS:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{action_name}_{timestamp}.mp4"
-            path = self.clip_folder / filename
             self.clip_saver.save(clip, path)
         if Config.UPLOAD_CLIPS:
             dependency = self._get_dependency(action_name, filename, inactive_counts)
