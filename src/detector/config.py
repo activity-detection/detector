@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     CAMERA_PORT: str
     RTSP_PATH: str
 
+    LOG_CONFIG_PATH: str = 'logging_config/stdout.json'
+
     UPLOAD_CLIPS: bool
     SAVE_CLIPS: bool
 
