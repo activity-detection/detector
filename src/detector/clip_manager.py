@@ -43,7 +43,7 @@ class ClipManager:
             reference_detections = [detection for detection, count in reference_counter.items() if count > 0]
             details = self.timestamper.timestamp(clip, action_name, (event_span[0], event_span[1]), reference_detections)
     
-            self.clip_uploader.start_upload(path, details, dependency)
+            self.clip_uploader.start_upload(clip, filename, details, dependency)
 
     def _get_dependency(self, action_name: str, filename: str, counts: tuple[int, int]) -> str | None:
         dependency = None

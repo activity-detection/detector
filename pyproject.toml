@@ -5,6 +5,7 @@ description = "Activities detector using video sources"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "av>=17.0.1",
     "lap>=0.5.13",
     "numpy>=2.4.2",
     "opencv-python-headless>=4.10.0.84",

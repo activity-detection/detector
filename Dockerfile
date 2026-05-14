@@ -23,7 +23,7 @@ RUN adduser \
     --uid "${UID}" \
     appuser
 
-COPY uv.lock pyproject.toml .
+COPY uv.lock pyproject.toml ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev

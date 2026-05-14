@@ -8,8 +8,10 @@ import threading
 import requests
 import json
 import time
-import os
+import io
+import av
 
+from src.detector.vectors import FrameVector
 from src.detector.timestamper import FullStampModel
 from src.detector.config import Config
 from src.detector import logger
@@ -30,7 +32,8 @@ class RecState(Enum):
 @dataclass
 class UploadTask:
     """Represents a clip upload task with dependencies"""
-    path: Path
+    clip: list[FrameVector]
+    filename: str
     details: FullStampModel
     state: RecState
     id: str | None = None
@@ -146,7 +149,7 @@ class ClipUploader:
                     self.upload_queue.remove(task)
 
         except Exception as e:
-            logger.error(f"Failed to upload clip '{task.path.name}': {e}", exc_info=True)
+            logger.error(f"Failed to upload clip '{task.filename}': {e}", exc_info=True)
 
             task.dependency = task.stashed_dependency
             task.stashed_dependency = None
@@ -165,7 +168,8 @@ class ClipUploader:
     
     def start_upload(
             self,
-            path: Path,
+            clip: list[FrameVector],
+            filename: str,
             details: FullStampModel,
             dependency_filename: str | None,
     ) -> None:
@@ -173,12 +177,13 @@ class ClipUploader:
         if dependency_filename is not None:
             with self.upload_lock:
                 for task in self.upload_queue:
-                    if task.path.name == dependency_filename:
+                    if task.filename == dependency_filename:
                         dependency = task
                         break
         
         task = UploadTask(
-            path=path,
+            clip=clip,
+            filename=filename,
             details=details,
             state=RecState.AWAIT_UPLOAD,
             dependency=dependency
@@ -192,8 +197,11 @@ class ClipUploader:
             details: FullStampModel,
             prev_id: str | None = None,
     ) -> None:
-        path = task.path
-        filename = path.name
+        clip = task.clip
+        filename = task.filename
+
+        if not clip:
+            raise ValueError("Clip is empty, nothing to upload.")
 
         data = {
             "video-name": filename,
@@ -204,16 +212,40 @@ class ClipUploader:
         if prev_id:
             data["continuation-of"] = prev_id
 
-        file_size_mb = os.path.getsize(path) / (1024 * 1024)
-        logger.info(f"Uploading file: {filename} (Size: {file_size_mb:.2f} MB)")
+        buffer = io.BytesIO()
+        
+        container = av.open(buffer, mode='w', format='mp4')
+        stream = container.add_stream('libx264', rate=Config.FRAME_RATE)
+        
+        first_frame = clip[0]['frame']
+        height, width, _ = first_frame.shape
+        stream.width = width
+        stream.height = height
+        stream.pix_fmt = 'yuv420p'
 
-        with open(path, "rb") as video_file:
-            files: dict[str, Any] = {
-                "file": (filename, video_file, "video/mp4"),
-                "details": (None, json.dumps(details), "application/json"),
-            }
-            response = requests.post(Config.BACKEND_UPLOAD_URL, data=data, files=files, timeout=15)
-            response.raise_for_status()
+        for frame_data in clip:
+            img_array = frame_data['frame']
+            frame = av.VideoFrame.from_ndarray(img_array, format='bgr24')
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        
+        for packet in stream.encode():
+            container.mux(packet)
+            
+        container.close()
+        
+        video_bytes = buffer.getvalue()
+        file_size_mb = len(video_bytes) / (1024 * 1024)
+        
+        logger.info(f"Uploading video: {filename} (Size: {file_size_mb:.2f} MB)")
+
+        files: dict[str, Any] = {
+            "file": (filename, video_bytes, "video/mp4"),
+            "details": (None, json.dumps(details), "application/json"),
+        }
+        
+        response = requests.post(Config.BACKEND_UPLOAD_URL, data=data, files=files, timeout=15)
+        response.raise_for_status()
 
         res_id = response.text
         
